@@ -2,12 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Outline Rush — fit the outline before time runs out!</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Outline Rush — scan, pose, fit the outline!</title>
   <link rel="stylesheet" href="css/style.css" />
-  <!-- Person segmentation for auto-scoring; the game falls back to
-       self-judged scoring if this fails to load (e.g. offline). -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
 </head>
 <body>
   <!-- Start screen -->
@@ -17,8 +14,8 @@
     <div class="card">
       <ol class="how-to">
         <li>📷 Stand back so your whole body is in frame.</li>
-        <li>✏️ A doodle outline appears on screen.</li>
-        <li>⏱️ Fit yourself inside it before the countdown hits zero.</li>
+        <li>🛸 Hold the scan pose — we measure you and size the outlines to fit.</li>
+        <li>✏️ A doodle outline appears. Fit inside it before the countdown hits zero.</li>
         <li>📸 SNAP! You get scored on how well you fit.</li>
       </ol>
       <button id="start-btn" class="btn big">▶ Start Game</button>
@@ -27,31 +24,32 @@
     <p class="privacy">Everything runs in your browser — no video is uploaded anywhere.</p>
   </section>
 
-  <!-- Game screen -->
-  <section id="game-screen" class="screen hidden">
-    <div class="hud">
-      <span id="round-label">Round 1 / 6</span>
-      <span id="pose-label"></span>
-      <span id="score-label">Score: 0</span>
-    </div>
-    <div class="stage-wrap">
-      <canvas id="stage"></canvas>
+  <!-- Game screen (fullscreen stage) -->
+  <section id="game-screen" class="hidden">
+    <canvas id="stage"></canvas>
 
-      <!-- Round result overlay -->
-      <div id="result-overlay" class="overlay hidden">
-        <div class="card result-card">
-          <div id="result-score" class="result-score">0 pts</div>
-          <div id="result-verdict" class="result-verdict"></div>
-          <img id="snapshot-img" alt="Your attempt" />
-          <div id="judge-buttons" class="judge-buttons hidden">
-            <button class="btn" data-score="100">😎 Nailed it</button>
-            <button class="btn" data-score="50">😅 Half in</button>
-            <button class="btn" data-score="0">🙈 Missed</button>
-          </div>
-          <div class="result-actions">
-            <button id="save-btn" class="btn ghost">💾 Save photo</button>
-            <button id="next-btn" class="btn">Next pose ➜</button>
-          </div>
+    <div id="hud" class="hud hidden">
+      <span class="chip" id="round-label"></span>
+      <span class="chip pose" id="pose-label"></span>
+      <span class="chip" id="score-label"></span>
+    </div>
+
+    <button id="skip-scan" class="btn ghost skip hidden">Skip scan ➜</button>
+
+    <!-- Round result overlay -->
+    <div id="result-overlay" class="overlay hidden">
+      <div class="card result-card">
+        <div id="result-score" class="result-score">0 pts</div>
+        <div id="result-verdict" class="result-verdict"></div>
+        <img id="snapshot-img" alt="Your attempt" />
+        <div id="judge-buttons" class="judge-buttons hidden">
+          <button class="btn" data-score="100">😎 Nailed it</button>
+          <button class="btn" data-score="50">😅 Half in</button>
+          <button class="btn" data-score="0">🙈 Missed</button>
+        </div>
+        <div class="result-actions">
+          <button id="save-btn" class="btn ghost">💾 Save photo</button>
+          <button id="next-btn" class="btn">Next pose ➜</button>
         </div>
       </div>
     </div>
@@ -63,11 +61,15 @@
     <div class="card">
       <div id="final-score" class="result-score">0 / 600</div>
       <div id="final-rank" class="result-verdict"></div>
-      <button id="again-btn" class="btn big">↻ Play Again</button>
+      <div class="result-actions">
+        <button id="again-btn" class="btn big">↻ Play Again</button>
+        <button id="rescan-btn" class="btn ghost">🛸 Re-scan player</button>
+      </div>
     </div>
   </section>
 
-  <script src="js/poses.js"></script>
+  <script src="js/skeleton.js"></script>
+  <script src="js/tracker.js"></script>
   <script src="js/game.js"></script>
 </body>
 </html>
