@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Outline Rush — fit the outline before time runs out!</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <!-- Person segmentation for auto-scoring; the game falls back to
+       self-judged scoring if this fails to load (e.g. offline). -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <!-- Start screen -->
+  <section id="start-screen" class="screen">
+    <h1 class="title">Outline<span class="accent">Rush</span></h1>
+    <p class="tagline">The TikTok outline trend... as a game.</p>
+    <div class="card">
+      <ol class="how-to">
+        <li>📷 Stand back so your whole body is in frame.</li>
+        <li>✏️ A doodle outline appears on screen.</li>
+        <li>⏱️ Fit yourself inside it before the countdown hits zero.</li>
+        <li>📸 SNAP! You get scored on how well you fit.</li>
+      </ol>
+      <button id="start-btn" class="btn big">▶ Start Game</button>
+      <p id="start-error" class="error"></p>
+    </div>
+    <p class="privacy">Everything runs in your browser — no video is uploaded anywhere.</p>
+  </section>
+
+  <!-- Game screen -->
+  <section id="game-screen" class="screen hidden">
+    <div class="hud">
+      <span id="round-label">Round 1 / 6</span>
+      <span id="pose-label"></span>
+      <span id="score-label">Score: 0</span>
+    </div>
+    <div class="stage-wrap">
+      <canvas id="stage"></canvas>
+
+      <!-- Round result overlay -->
+      <div id="result-overlay" class="overlay hidden">
+        <div class="card result-card">
+          <div id="result-score" class="result-score">0 pts</div>
+          <div id="result-verdict" class="result-verdict"></div>
+          <img id="snapshot-img" alt="Your attempt" />
+          <div id="judge-buttons" class="judge-buttons hidden">
+            <button class="btn" data-score="100">😎 Nailed it</button>
+            <button class="btn" data-score="50">😅 Half in</button>
+            <button class="btn" data-score="0">🙈 Missed</button>
+          </div>
+          <div class="result-actions">
+            <button id="save-btn" class="btn ghost">💾 Save photo</button>
+            <button id="next-btn" class="btn">Next pose ➜</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Final screen -->
+  <section id="final-screen" class="screen hidden">
+    <h1 class="title small">Game Over!</h1>
+    <div class="card">
+      <div id="final-score" class="result-score">0 / 600</div>
+      <div id="final-rank" class="result-verdict"></div>
+      <button id="again-btn" class="btn big">↻ Play Again</button>
+    </div>
+  </section>
+
+  <script src="js/poses.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>

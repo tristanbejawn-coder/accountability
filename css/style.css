@@ -1,0 +1,213 @@
+/* Outline Rush — doodle / hand-drawn aesthetic */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #14121f;
+  --ink: #ffffff;
+  --accent: #ffe14d;
+  --pop: #ff5c8a;
+  --doodle-font: "Comic Sans MS", "Chalkboard SE", "Segoe Print", cursive, sans-serif;
+}
+
+body {
+  background: var(--bg);
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(255, 92, 138, 0.12) 0 140px, transparent 141px),
+    radial-gradient(circle at 85% 75%, rgba(255, 225, 77, 0.1) 0 180px, transparent 181px);
+  color: var(--ink);
+  font-family: var(--doodle-font);
+  min-height: 100vh;
+}
+
+.screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2rem;
+  padding: 1.5rem;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.title {
+  font-size: clamp(2.6rem, 8vw, 5rem);
+  letter-spacing: 0.02em;
+  transform: rotate(-2deg);
+  text-shadow: 4px 4px 0 rgba(0, 0, 0, 0.6);
+}
+
+.title.small {
+  font-size: clamp(2rem, 6vw, 3.4rem);
+}
+
+.accent {
+  color: var(--accent);
+}
+
+.tagline {
+  font-size: 1.15rem;
+  opacity: 0.85;
+  transform: rotate(1deg);
+}
+
+/* Hand-drawn card: the uneven border-radius makes edges look sketched. */
+.card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 3px solid var(--ink);
+  border-radius: 1.2rem 0.6rem 1.4rem 0.7rem / 0.7rem 1.4rem 0.6rem 1.2rem;
+  padding: 1.6rem 2rem;
+  max-width: 34rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1rem;
+}
+
+.how-to {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  font-size: 1.05rem;
+}
+
+.btn {
+  font-family: var(--doodle-font);
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #14121f;
+  background: var(--accent);
+  border: 3px solid var(--ink);
+  border-radius: 1rem 0.5rem 1.1rem 0.6rem / 0.6rem 1.1rem 0.5rem 1rem;
+  padding: 0.6rem 1.4rem;
+  cursor: pointer;
+  transform: rotate(-1deg);
+  transition: transform 0.1s ease;
+}
+
+.btn:hover {
+  transform: rotate(1deg) scale(1.05);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.btn.big {
+  font-size: 1.5rem;
+  padding: 0.8rem 2.2rem;
+  background: var(--pop);
+  color: #fff;
+}
+
+.btn.ghost {
+  background: transparent;
+  color: var(--ink);
+}
+
+.error {
+  color: #ff5c5c;
+  min-height: 1.2em;
+}
+
+.privacy {
+  font-size: 0.85rem;
+  opacity: 0.6;
+}
+
+/* Game screen */
+
+#game-screen {
+  gap: 0.8rem;
+}
+
+/* Cap the stage by viewport height too (4:3 canvas + room for the HUD) so
+   the countdown is never pushed off-screen. */
+.hud,
+.stage-wrap {
+  width: min(96vw, 62rem, calc((100vh - 8rem) * 4 / 3));
+}
+
+.hud {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.6rem 1.5rem;
+  font-size: 1.05rem;
+}
+
+#pose-label {
+  color: var(--accent);
+  text-align: center;
+  flex: 1;
+}
+
+.stage-wrap {
+  position: relative;
+}
+
+#stage {
+  width: 100%;
+  display: block;
+  border: 4px solid var(--ink);
+  border-radius: 1.4rem 0.7rem 1.5rem 0.8rem / 0.8rem 1.5rem 0.7rem 1.4rem;
+  background: #000;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 8, 20, 0.75);
+  border-radius: inherit;
+}
+
+.result-card {
+  max-width: min(90%, 30rem);
+  max-height: 94%;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+#snapshot-img {
+  max-height: 38vh;
+  object-fit: contain;
+}
+
+.result-score {
+  font-size: 3rem;
+  color: var(--accent);
+  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.6);
+  transform: rotate(-2deg);
+}
+
+.result-verdict {
+  font-size: 1.4rem;
+  color: var(--pop);
+}
+
+#snapshot-img {
+  width: 100%;
+  border: 3px solid var(--ink);
+  border-radius: 0.9rem 0.5rem 1rem 0.5rem / 0.5rem 1rem 0.5rem 0.9rem;
+}
+
+.judge-buttons,
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  justify-content: center;
+}
