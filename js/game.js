@@ -10,33 +10,6 @@ const RESULT_MS = 4000;
 const SCAN_HOLD_MS = 1400;
 const SCAN_COLOR = '#59f7ff';
 
-// Poses as limb angles (see limbDir in skeleton.js): 0 = down, 90 = out,
-// 180 = up. `lean` tilts the upper body. difficulty: 1 easy … 3 balance hell.
-const POSES = [
-  { name: 'Star Jump', emoji: '⭐', tip: 'Arms up and out, legs wide!', difficulty: 1,
-    arms: { L: [135, 140], R: [135, 140] }, legs: { L: [20, 22], R: [20, 22] } },
-  { name: 'T-Pose', emoji: '✈️', tip: 'Arms straight out, feet together.', difficulty: 1,
-    arms: { L: [90, 90], R: [90, 90] }, legs: { L: [4, 4], R: [4, 4] } },
-  { name: 'Muscle Flex', emoji: '💪', tip: 'Flex both arms like a strongman!', difficulty: 1,
-    arms: { L: [95, 205], R: [95, 205] }, legs: { L: [10, 10], R: [10, 10] } },
-  { name: 'Disco Fever', emoji: '🕺', tip: 'Point to the sky, hand on hip!', difficulty: 2,
-    arms: { L: [55, -35], R: [150, 155] }, legs: { L: [18, 20], R: [4, 4] } },
-  { name: 'Invisible Chair', emoji: '🪑', tip: 'Squat like you are sitting, arms out!', difficulty: 2,
-    arms: { L: [90, 90], R: [90, 90] }, legs: { L: [38, -12], R: [38, -12] } },
-  { name: 'Flamingo', emoji: '🦩', tip: 'One leg tucked in, arms up in a V!', difficulty: 2,
-    arms: { L: [140, 145], R: [140, 145] }, legs: { L: [2, 2], R: [62, -58] } },
-  { name: 'The Egyptian', emoji: '🏺', tip: 'Arms in a zigzag — walk like an Egyptian!', difficulty: 2,
-    arms: { L: [90, 170], R: [90, 10] }, legs: { L: [14, 15], R: [4, 4] } },
-  { name: 'Teapot', emoji: '🫖', tip: 'Handle on the hip, spout out — and TIP!', difficulty: 2,
-    arms: { L: [55, -35], R: [120, 55] }, legs: { L: [8, 8], R: [8, 8] }, lean: 12 },
-  { name: 'Karate Crane', emoji: '🥋', tip: 'Hands high, knee up — hii-ya!', difficulty: 3,
-    arms: { L: [155, 160], R: [155, 160] }, legs: { L: [3, 3], R: [85, 8] } },
-  { name: 'Tipsy Tightrope', emoji: '🎪', tip: 'Cross those legs, arms out, don\'t fall!', difficulty: 3,
-    arms: { L: [90, 90], R: [90, 90] }, legs: { L: [-14, -16], R: [-24, -26] }, lean: 7 },
-  { name: 'Leaning Tower', emoji: '🗼', tip: 'Arms up, tilt over… don\'t topple!', difficulty: 3,
-    arms: { L: [168, 170], R: [168, 170] }, legs: { L: [2, 2], R: [2, 2] }, lean: 14 },
-];
-
 // Funny score commentary, picked at random per band.
 const COMMENTS = [
   { min: 90, color: '#7dff9c', lines: ['ARE YOU LIQUID?!', 'Absolute shapeshifter!', 'The outline never stood a chance!'] },
@@ -89,6 +62,7 @@ const state = {
   lastSnap: null,
   snapshotUrl: null,
   shots: [],       // rollercoaster photo wall: {url, label, score}
+  usedPoses: new Set(), // no repeats within one game
   result: null,    // {headline, color, comment, sub}
   resultUntil: 0,
   calibVideo: null, // measured calibration in video pixels, null = defaults
@@ -107,7 +81,8 @@ function speak(text) {
   try {
     if (!('speechSynthesis' in window)) return;
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text.replace(/[⭐✈️💪🕺🪑🦩🏺🫖🥋🎪🗼☠️…—]/g, ''));
+    const u = new SpeechSynthesisUtterance(
+      text.replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}…—]/gu, ''));
     u.rate = 1.05;
     u.pitch = 0.85;
     speechSynthesis.speak(u);
@@ -805,6 +780,7 @@ function beginRounds() {
   state.level = 1;
   state.totalScore = 0;
   state.shots = [];
+  state.usedPoses = new Set();
   showScreen('game');
   nextRound();
 }
@@ -827,6 +803,7 @@ function reAnchor() {
 
 function launchRound(pose, duration) {
   els.resultOverlay.classList.add('hidden');
+  state.usedPoses.add(pose);
   reAnchor();
   prepareRoundArt(pose, currentShrink());
   state.roundDuration = duration;
@@ -868,7 +845,9 @@ function startElimination() {
 
 function elimPool() {
   const min = state.level >= 5 ? 3 : state.level >= 3 ? 2 : 1;
-  let pool = POSES.filter((p) => p.difficulty >= min && p !== state.currentPose);
+  let pool = POSES.filter((p) =>
+    p.difficulty >= min && p !== state.currentPose && !state.usedPoses.has(p));
+  if (!pool.length) pool = POSES.filter((p) => p.difficulty >= min && p !== state.currentPose);
   if (!pool.length) pool = POSES.filter((p) => p !== state.currentPose);
   return pool;
 }

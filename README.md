@@ -26,10 +26,18 @@ Think *Hole in the Wall*, but the wall is a wobbly TikTok-style doodle.
 4. **5 warm-up rounds** of easier poses with a shrinking timer, then…
 5. **☠️ ELIMINATION TIME**: one pose per level, and you must beat a target
    score to survive. Each level the target rises (45 → 80), the timer shrinks
-   (4.5s → 2s), the pose pool gets harder (balance poses: Teapot, Karate
-   Crane, Tipsy Tightrope, Leaning Tower…), and the outline itself slowly
+   (4.5s → 2s), the pose pool gets harder, and the outline itself slowly
    *shrinks*. Survive as many levels as you can — your final rank goes from
    🧱 First-Round Faller to 🏆 Balance Deity.
+
+   The game draws from a **library of 100 poses** (`js/poses-library.js`):
+   11 hand-made classics plus 89 procedurally generated ones — yoga-style
+   one-leg balances (tree tucks, high knees, full side kicks), goddess
+   squats, crossed tightropes, lunges, leans, and every arm shape from
+   overhead crosses to zigzags — each with a generated name like
+   *The Haunted Sasquatch* or *The Feral Windmill*. No pose repeats within
+   a game. Regenerate or extend the library with
+   `node scripts/generate-poses.mjs` (deterministic seed).
 6. When the timer hits zero: 📸 snap, score, and a big on-screen (and spoken!)
    verdict — then the next round starts automatically. The whole game is
    hands-free after you press Start: pose names, tips, and score commentary
