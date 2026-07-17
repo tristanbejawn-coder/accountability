@@ -122,6 +122,19 @@ function buildJoints(c, pose, jitter = 0) {
   J.kneeR = reach(J.hipR, c.thigh, 1, pose.legs.R[0]);
   J.ankleR = reach(J.kneeR, c.shin, 1, pose.legs.R[1]);
 
+  // Optional upper-body lean (degrees, positive tilts right on screen) —
+  // rotates everything above the hips around the pelvis. Balance poses!
+  if (pose.lean) {
+    const r = (pose.lean * Math.PI) / 180;
+    const cos = Math.cos(r);
+    const sin = Math.sin(r);
+    for (const k of ['midShoulder', 'head', 'shoulderL', 'shoulderR',
+                     'elbowL', 'elbowR', 'wristL', 'wristR']) {
+      const p = J[k];
+      J[k] = { x: p.x * cos - p.y * sin, y: p.x * sin + p.y * cos };
+    }
+  }
+
   const lowestSole = Math.max(J.ankleL.y, J.ankleR.y) + c.personH * 0.04;
   const ox = c.anchorX;
   const oy = c.feetY - lowestSole;

@@ -1,24 +1,36 @@
 // Outline Rush — scan yourself, then fit inside the doodle outline before
-// time runs out.
+// time runs out. Survive 5 rounds, then it's ELIMINATION TIME.
 
-const ROUND_SECONDS = [6, 5, 5, 4, 4, 3];
+const NORMAL_ROUNDS = 5;
+const NORMAL_SECONDS = [6, 5, 5, 4, 4];
 const SCAN_HOLD_MS = 1400;
 const SCAN_COLOR = '#59f7ff';
 
-// Poses as limb angles (see limbDir in skeleton.js): 0 = down, 90 = out, 180 = up.
+// Poses as limb angles (see limbDir in skeleton.js): 0 = down, 90 = out,
+// 180 = up. `lean` tilts the upper body. difficulty: 1 easy … 3 balance hell.
 const POSES = [
-  { name: 'Star Jump', emoji: '⭐', tip: 'Arms up and out, legs wide!',
+  { name: 'Star Jump', emoji: '⭐', tip: 'Arms up and out, legs wide!', difficulty: 1,
     arms: { L: [135, 140], R: [135, 140] }, legs: { L: [20, 22], R: [20, 22] } },
-  { name: 'T-Pose', emoji: '✈️', tip: 'Arms straight out, feet together.',
+  { name: 'T-Pose', emoji: '✈️', tip: 'Arms straight out, feet together.', difficulty: 1,
     arms: { L: [90, 90], R: [90, 90] }, legs: { L: [4, 4], R: [4, 4] } },
-  { name: 'Muscle Flex', emoji: '💪', tip: 'Flex both arms like a strongman!',
+  { name: 'Muscle Flex', emoji: '💪', tip: 'Flex both arms like a strongman!', difficulty: 1,
     arms: { L: [95, 168], R: [95, 168] }, legs: { L: [10, 10], R: [10, 10] } },
-  { name: 'Disco Fever', emoji: '🕺', tip: 'Point to the sky, hand on hip!',
+  { name: 'Disco Fever', emoji: '🕺', tip: 'Point to the sky, hand on hip!', difficulty: 2,
     arms: { L: [55, -35], R: [150, 155] }, legs: { L: [18, 20], R: [4, 4] } },
-  { name: 'Flamingo', emoji: '🦩', tip: 'One leg tucked in, arms up in a V!',
-    arms: { L: [140, 145], R: [140, 145] }, legs: { L: [2, 2], R: [65, -75] } },
-  { name: 'Invisible Chair', emoji: '🪑', tip: 'Squat like you are sitting, arms out!',
+  { name: 'Invisible Chair', emoji: '🪑', tip: 'Squat like you are sitting, arms out!', difficulty: 2,
     arms: { L: [90, 90], R: [90, 90] }, legs: { L: [38, -12], R: [38, -12] } },
+  { name: 'Flamingo', emoji: '🦩', tip: 'One leg tucked in, arms up in a V!', difficulty: 2,
+    arms: { L: [140, 145], R: [140, 145] }, legs: { L: [2, 2], R: [65, -75] } },
+  { name: 'The Egyptian', emoji: '🏺', tip: 'Arms in a zigzag — walk like an Egyptian!', difficulty: 2,
+    arms: { L: [90, 170], R: [90, 10] }, legs: { L: [14, 15], R: [4, 4] } },
+  { name: 'Teapot', emoji: '🫖', tip: 'Handle on the hip, spout out — and TIP!', difficulty: 2,
+    arms: { L: [55, -35], R: [120, 55] }, legs: { L: [8, 8], R: [8, 8] }, lean: 12 },
+  { name: 'Karate Crane', emoji: '🥋', tip: 'Hands high, knee up — hii-ya!', difficulty: 3,
+    arms: { L: [155, 160], R: [155, 160] }, legs: { L: [3, 3], R: [85, 8] } },
+  { name: 'Tipsy Tightrope', emoji: '🎪', tip: 'Cross those legs, arms out, don\'t fall!', difficulty: 3,
+    arms: { L: [90, 90], R: [90, 90] }, legs: { L: [-10, -12], R: [-16, -18] }, lean: 7 },
+  { name: 'Leaning Tower', emoji: '🗼', tip: 'Arms up, tilt over… don\'t topple!', difficulty: 3,
+    arms: { L: [168, 170], R: [168, 170] }, legs: { L: [2, 2], R: [2, 2] }, lean: 14 },
 ];
 
 const canvas = document.getElementById('stage');
@@ -42,12 +54,16 @@ for (const id of [
 }
 
 const state = {
-  phase: 'idle', // idle | loading | scan | calibrated | getready | posing | scoring | result | final
+  phase: 'idle', // idle | loading | scan | calibrated | elim-intro | getready | posing | scoring | result | final
+  mode: 'normal', // normal | elim
   round: 0,
+  level: 1,
+  threshold: 0,
+  roundDuration: 6,
+  lastSurvived: true,
   poses: [],
   totalScore: 0,
   deadline: 0,
-  lastTick: -1,
   currentPose: null,
   ringFrames: [],
   fillFrame: null,
@@ -62,7 +78,8 @@ const state = {
 };
 
 // ---------------------------------------------------------------------------
-// Audio
+// Audio — synthesized blips, tension track, and stings. If assets/tension.mp3
+// exists (e.g. the actual trend sound), it replaces the synthesized tension.
 // ---------------------------------------------------------------------------
 
 let audioCtx = null;
@@ -95,6 +112,105 @@ function playLockChirp() {
     setTimeout(() => beep(f, 0.12, 'sine', 0.11), i * 90));
 }
 
+// Womp womp womp womaaaaah.
+function sadTrombone() {
+  if (!audioCtx) return;
+  [[233.1, 0.30, 0], [220, 0.30, 340], [207.7, 0.30, 680], [196, 1.0, 1020]]
+    .forEach(([f, dur, delay]) => setTimeout(() => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(f * 1.02, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(f * 0.96, audioCtx.currentTime + dur);
+      gain.gain.setValueAtTime(0.09, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + dur);
+    }, delay));
+}
+
+function elimSting() {
+  beep(110, 0.7, 'sawtooth', 0.11);
+  beep(116.5, 0.7, 'sawtooth', 0.11); // dissonant pair = dread
+  setTimeout(() => beep(55, 0.5, 'sine', 0.14), 100);
+}
+
+const tension = { timers: [], custom: null, customOk: false };
+
+function initCustomTension() {
+  if (tension.custom) return;
+  try {
+    const a = new Audio('assets/tension.mp3');
+    a.preload = 'auto';
+    a.addEventListener('canplaythrough', () => { tension.customOk = true; });
+    tension.custom = a;
+  } catch (e) {}
+}
+
+function thump() {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(80, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(45, audioCtx.currentTime + 0.13);
+  gain.gain.setValueAtTime(0.13, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.15);
+}
+
+function panicWhine(ms) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(280, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(950, audioCtx.currentTime + ms / 1000);
+  gain.gain.setValueAtTime(0.03, audioCtx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.055, audioCtx.currentTime + ms / 1000);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + ms / 1000 + 0.05);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + ms / 1000 + 0.05);
+}
+
+// Accelerating tick-tock + heartbeat + final rising whine for the countdown.
+function startTension(ms, tense) {
+  stopTension();
+  if (tension.customOk && tension.custom) {
+    tension.custom.currentTime = 0;
+    tension.custom.volume = 0.7;
+    tension.custom.play().catch(() => {});
+    return;
+  }
+  if (!audioCtx) return;
+  const startIv = tense ? 340 : 430;
+  const endIv = tense ? 105 : 150;
+  let t = 0;
+  let i = 0;
+  while (t < ms - 120) {
+    const high = i % 2 === 0;
+    tension.timers.push(setTimeout(
+      () => beep(high ? 1040 : 830, 0.03, 'square', 0.055), t));
+    t += startIv + (endIv - startIv) * (t / ms);
+    i++;
+  }
+  for (let h = 0; h < ms - 350; h += tense ? 700 : 900) {
+    tension.timers.push(setTimeout(thump, h));
+  }
+  const whineLen = Math.min(1200, ms);
+  tension.timers.push(setTimeout(() => panicWhine(whineLen), Math.max(0, ms - whineLen)));
+}
+
+function stopTension() {
+  tension.timers.forEach(clearTimeout);
+  tension.timers = [];
+  if (tension.custom && !tension.custom.paused) tension.custom.pause();
+}
+
 // ---------------------------------------------------------------------------
 // Canvas sizing & camera drawing
 // ---------------------------------------------------------------------------
@@ -108,7 +224,7 @@ function resizeCanvas() {
   state.scanGhost = null; // rebuilt lazily at the new size
   if (state.currentPose &&
       ['getready', 'posing', 'scoring', 'result'].includes(state.phase)) {
-    prepareRoundArt(state.currentPose);
+    prepareRoundArt(state.currentPose, currentShrink());
   }
 }
 
@@ -191,9 +307,18 @@ function currentCalib() {
     : defaultCalib(W, H);
 }
 
-function prepareRoundArt(pose) {
+// Elimination levels slowly shrink the outline. Pure evil.
+function currentShrink() {
+  if (state.mode !== 'elim') return 1;
+  return 1 - Math.min(0.10, 0.015 * (state.level - 1));
+}
+
+function prepareRoundArt(pose, sizeScale = 1) {
   state.currentPose = pose;
   const calib = currentCalib();
+  if (sizeScale !== 1) {
+    for (const k of CALIB_LENGTH_KEYS) calib[k] *= sizeScale;
+  }
   const thickness = Math.max(4, H * 0.008);
   state.targetMask = silhouetteCanvas(calib, pose, 0);
   state.ringFrames = [0, 1, 2].map(() =>
@@ -456,6 +581,15 @@ function render(now) {
     case 'calibrated':
       drawScan(now);
       break;
+    case 'elim-intro': {
+      ctx.fillStyle = `rgba(50, 0, 12, ${0.5 + 0.12 * Math.sin(now / 130)})`;
+      ctx.fillRect(0, 0, W, H);
+      drawBigText('ELIMINATION!', '#ff5c5c');
+      const fs = Math.round(H * 0.035);
+      drawFittedText(`Beat the target score or you're OUT!`, H * 0.26, fs, '#fff');
+      drawFittedText(`It only gets harder from here… ☠️`, H * 0.26 + fs * 1.6, fs, '#fff');
+      break;
+    }
     case 'getready':
     case 'posing': {
       if (state.fillFrame) ctx.drawImage(state.fillFrame, 0, 0);
@@ -463,19 +597,27 @@ function render(now) {
         ctx.drawImage(state.ringFrames[Math.floor(now / 160) % state.ringFrames.length], 0, 0);
       }
       if (state.phase === 'getready') {
-        drawBigText('GET READY!', '#ffe14d');
+        drawBigText('GET READY!', state.mode === 'elim' ? '#ff5c5c' : '#ffe14d');
       } else {
         const remaining = Math.max(0, state.deadline - now);
         const secs = Math.ceil(remaining / 1000);
-        if (secs !== state.lastTick) {
-          state.lastTick = secs;
-          if (secs > 0) beep(secs <= 1 ? 1320 : 880, 0.09);
-        }
         drawBigText(String(secs), remaining < 1500 ? '#ff5c5c' : '#ffffff');
         if (remaining <= 0) {
           setPhase('scoring');
           captureAndScore();
         }
+      }
+      if (state.mode === 'elim') {
+        const fs = Math.round(H * 0.034);
+        ctx.font = `bold ${fs}px "Comic Sans MS", "Chalkboard SE", cursive, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.lineWidth = Math.max(3, fs * 0.12);
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.fillStyle = '#ff9db5';
+        const label = `☠️ BEAT ${state.threshold}`;
+        ctx.strokeText(label, W / 2, H * 0.06 + H * 0.155);
+        ctx.fillText(label, W / 2, H * 0.06 + H * 0.155);
       }
       break;
     }
@@ -496,18 +638,29 @@ function render(now) {
   requestAnimationFrame(render);
 }
 
-function drawBigText(text, color) {
+// Draws centered outlined text, shrinking the font so it always fits on
+// screen (long words like ELIMINATION! on narrow portrait phones).
+function drawFittedText(text, y, baseFs, color) {
   ctx.save();
-  const fs = Math.round(Math.min(H * 0.15, W * 0.18));
+  let fs = Math.round(baseFs);
   ctx.font = `bold ${fs}px "Comic Sans MS", "Chalkboard SE", cursive, sans-serif`;
+  const width = ctx.measureText(text).width;
+  if (width > W * 0.94) {
+    fs = Math.round(fs * (W * 0.94) / width);
+    ctx.font = `bold ${fs}px "Comic Sans MS", "Chalkboard SE", cursive, sans-serif`;
+  }
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  ctx.lineWidth = Math.max(4, fs * 0.09);
+  ctx.lineWidth = Math.max(3, fs * 0.09);
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
   ctx.fillStyle = color;
-  ctx.strokeText(text, W / 2, H * 0.06);
-  ctx.fillText(text, W / 2, H * 0.06);
+  ctx.strokeText(text, W / 2, y);
+  ctx.fillText(text, W / 2, y);
   ctx.restore();
+}
+
+function drawBigText(text, color) {
+  drawFittedText(text, H * 0.06, Math.min(H * 0.15, W * 0.18), color);
 }
 
 // ---------------------------------------------------------------------------
@@ -517,7 +670,8 @@ function drawBigText(text, color) {
 function setPhase(p) {
   state.phase = p;
   els.skipScan.classList.toggle('hidden', p !== 'scan');
-  els.hud.classList.toggle('hidden', ['loading', 'scan', 'calibrated'].includes(p));
+  els.hud.classList.toggle('hidden',
+    ['loading', 'scan', 'calibrated', 'elim-intro'].includes(p));
 }
 
 function notice(text, ms = 4000) {
@@ -542,6 +696,7 @@ async function startGame() {
   if (!audioCtx) {
     try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
   }
+  initCustomTension();
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -586,48 +741,88 @@ function skipScan() {
 }
 
 function beginRounds() {
-  state.poses = shuffled(POSES);
+  state.mode = 'normal';
+  state.poses = shuffled(POSES.filter((p) => p.difficulty <= 2)).slice(0, NORMAL_ROUNDS);
   state.round = 0;
+  state.level = 1;
   state.totalScore = 0;
   showScreen('game');
   nextRound();
 }
 
-function nextRound() {
-  els.resultOverlay.classList.add('hidden');
-
-  // Re-anchor the outline to wherever the player is standing right now.
-  if (state.calibVideo && Tracker.ready()) {
-    const det = Tracker.detect(video);
-    const lms = det && det.landmarks;
-    const vw = video.videoWidth || W;
-    const vh = video.videoHeight || H;
-    if (lms &&
-        [LM.HIP_L, LM.HIP_R, LM.ANKLE_L, LM.ANKLE_R].every((i) => (lms[i].visibility ?? 1) > 0.5)) {
-      state.calibVideo.anchorX = ((lms[LM.HIP_L].x + lms[LM.HIP_R].x) / 2) * vw;
-      state.calibVideo.feetY =
-        Math.max(lms[LM.ANKLE_L].y, lms[LM.ANKLE_R].y) * vh +
-        state.calibVideo.personH * 0.05;
-    }
+// Re-anchor the outline to wherever the player is standing right now.
+function reAnchor() {
+  if (!state.calibVideo || !Tracker.ready()) return;
+  const det = Tracker.detect(video);
+  const lms = det && det.landmarks;
+  const vw = video.videoWidth || W;
+  const vh = video.videoHeight || H;
+  if (lms &&
+      [LM.HIP_L, LM.HIP_R, LM.ANKLE_L, LM.ANKLE_R].every((i) => (lms[i].visibility ?? 1) > 0.5)) {
+    state.calibVideo.anchorX = ((lms[LM.HIP_L].x + lms[LM.HIP_R].x) / 2) * vw;
+    state.calibVideo.feetY =
+      Math.max(lms[LM.ANKLE_L].y, lms[LM.ANKLE_R].y) * vh +
+      state.calibVideo.personH * 0.05;
   }
+}
 
-  const p = state.poses[state.round];
-  prepareRoundArt(p);
-  els.roundLabel.textContent = `Round ${state.round + 1}/${state.poses.length}`;
-  els.poseLabel.textContent = `${p.emoji} ${p.name} — ${p.tip}`;
+function launchRound(pose, duration) {
+  els.resultOverlay.classList.add('hidden');
+  reAnchor();
+  prepareRoundArt(pose, currentShrink());
+  state.roundDuration = duration;
+
+  if (state.mode === 'elim') {
+    els.roundLabel.textContent = `☠️ Level ${state.level}`;
+    els.poseLabel.textContent = `${pose.emoji} ${pose.name} — ${pose.tip}`;
+  } else {
+    els.roundLabel.textContent = `Round ${state.round + 1}/${NORMAL_ROUNDS}`;
+    els.poseLabel.textContent = `${pose.emoji} ${pose.name} — ${pose.tip}`;
+  }
   els.scoreLabel.textContent = `⭐ ${state.totalScore}`;
 
   setPhase('getready');
   setTimeout(() => {
     if (state.phase !== 'getready') return;
-    state.lastTick = -1;
-    state.deadline =
-      performance.now() + ROUND_SECONDS[state.round % ROUND_SECONDS.length] * 1000;
+    state.deadline = performance.now() + state.roundDuration * 1000;
     setPhase('posing');
+    startTension(state.roundDuration * 1000, state.mode === 'elim');
   }, 2000);
 }
 
+function nextRound() {
+  launchRound(state.poses[state.round], NORMAL_SECONDS[state.round]);
+}
+
+function startElimination() {
+  state.mode = 'elim';
+  state.level = 1;
+  els.resultOverlay.classList.add('hidden');
+  setPhase('elim-intro');
+  elimSting();
+  setTimeout(() => {
+    if (state.phase === 'elim-intro') nextElimLevel();
+  }, 3200);
+}
+
+function elimPool() {
+  const min = state.level >= 5 ? 3 : state.level >= 3 ? 2 : 1;
+  let pool = POSES.filter((p) => p.difficulty >= min && p !== state.currentPose);
+  if (!pool.length) pool = POSES.filter((p) => p !== state.currentPose);
+  return pool;
+}
+
+function nextElimLevel() {
+  state.threshold = Math.min(80, 40 + 5 * state.level);
+  const duration = Math.max(2, 4.5 - 0.3 * (state.level - 1));
+  const pool = elimPool();
+  const pose = pool[Math.floor(Math.random() * pool.length)];
+  if (state.level >= 2) notice('⚠ The outline is shrinking…', 2500);
+  launchRound(pose, duration);
+}
+
 async function captureAndScore() {
+  stopTension();
   beep(300, 0.25, 'sawtooth', 0.12);
 
   const snap = mkCanvas(W, H);
@@ -639,11 +834,26 @@ async function captureAndScore() {
   sg.drawImage(state.fillFrame, 0, 0);
   sg.drawImage(state.ringFrames[0], 0, 0);
 
+  setPhase('result');
+  els.resultOverlay.classList.remove('hidden');
+
   if (det && det.maskCanvas) {
-    finishRound(computeScore(det.maskCanvas), snap, false);
+    const score = computeScore(det.maskCanvas);
+    stampScore(snap, score);
+    finalizeSnapshot(snap);
+    resolveScore(score);
   } else {
-    finishRound(null, snap, true);
+    finalizeSnapshot(snap);
+    els.resultScore.textContent = '🤔';
+    els.resultVerdict.textContent = 'Auto-scoring unavailable — how did you do?';
+    els.judgeButtons.classList.remove('hidden');
+    els.nextBtn.classList.add('hidden');
   }
+}
+
+function finalizeSnapshot(snapCanvas) {
+  state.snapshotUrl = snapCanvas.toDataURL('image/png');
+  els.snapshotImg.src = state.snapshotUrl;
 }
 
 function stampScore(snapCanvas, score) {
@@ -658,63 +868,63 @@ function stampScore(snapCanvas, score) {
   g.fillText(`${score} pts`, W - fs * 0.4, H - fs * 0.5);
 }
 
-function finishRound(score, snapCanvas, selfJudge) {
-  setPhase('result');
-  els.resultOverlay.classList.remove('hidden');
-
-  if (selfJudge) {
-    els.resultScore.textContent = '🤔';
-    els.resultVerdict.textContent = 'Auto-scoring unavailable — how did you do?';
-    els.judgeButtons.classList.remove('hidden');
-    els.nextBtn.classList.add('hidden');
-  } else {
-    const verdict = verdictFor(score);
-    stampScore(snapCanvas, score);
-    state.totalScore += score;
-    els.resultScore.textContent = `${score} pts`;
-    els.resultVerdict.textContent = verdict.text;
-    els.judgeButtons.classList.add('hidden');
-    els.nextBtn.classList.remove('hidden');
-    playFanfare(verdict.good);
-  }
-
-  state.snapshotUrl = snapCanvas.toDataURL('image/png');
-  els.snapshotImg.src = state.snapshotUrl;
-  els.scoreLabel.textContent = `⭐ ${state.totalScore}`;
-}
-
-function selfJudgeScore(score) {
+// Shared by auto-scoring and the self-judge buttons.
+function resolveScore(score) {
   state.totalScore += score;
   els.resultScore.textContent = `${score} pts`;
-  els.resultVerdict.textContent = verdictFor(score).text;
   els.judgeButtons.classList.add('hidden');
   els.nextBtn.classList.remove('hidden');
   els.scoreLabel.textContent = `⭐ ${state.totalScore}`;
-  playFanfare(score >= 60);
-}
 
-function advance() {
-  state.round++;
-  if (state.round >= state.poses.length) {
-    showFinal();
+  if (state.mode === 'elim') {
+    state.lastSurvived = score >= state.threshold;
+    if (state.lastSurvived) {
+      els.resultVerdict.textContent = `😅 SURVIVED! (needed ${state.threshold})`;
+      els.nextBtn.textContent = `Level ${state.level + 1} ➜`;
+      playFanfare(true);
+    } else {
+      els.resultVerdict.textContent = `☠️ ELIMINATED! (needed ${state.threshold})`;
+      els.nextBtn.textContent = 'See results ➜';
+      sadTrombone();
+    }
   } else {
-    nextRound();
+    const verdict = verdictFor(score);
+    els.resultVerdict.textContent = verdict.text;
+    els.nextBtn.textContent =
+      state.round >= NORMAL_ROUNDS - 1 ? '☠️ Elimination time ➜' : 'Next pose ➜';
+    playFanfare(verdict.good);
   }
 }
 
-function rankFor(total, max) {
-  const pct = total / max;
-  if (pct >= 0.8) return '🏆 Outline Legend';
-  if (pct >= 0.6) return '🥈 Shape Shifter';
-  if (pct >= 0.4) return '🥉 Bendy Beginner';
-  return '🧱 The Wall Won';
+function advance() {
+  if (state.mode === 'normal') {
+    state.round++;
+    if (state.round >= NORMAL_ROUNDS) {
+      startElimination();
+    } else {
+      nextRound();
+    }
+  } else if (state.lastSurvived) {
+    state.level++;
+    nextElimLevel();
+  } else {
+    showFinal();
+  }
+}
+
+function rankForLevel(level) {
+  if (level >= 8) return '🏆 Balance Deity';
+  if (level >= 5) return '🥈 Shape Survivor';
+  if (level >= 3) return '🥉 Wobbly Warrior';
+  return '🧱 First-Round Faller';
 }
 
 function showFinal() {
   setPhase('final');
   els.resultOverlay.classList.add('hidden');
-  els.finalScore.textContent = `${state.totalScore} / ${state.poses.length * 100}`;
-  els.finalRank.textContent = rankFor(state.totalScore, state.poses.length * 100);
+  els.finalScore.textContent = `${state.totalScore} pts`;
+  els.finalRank.textContent =
+    `☠️ Knocked out at Level ${state.level} — ${rankForLevel(state.level)}`;
   showScreen('final');
 }
 
@@ -744,9 +954,9 @@ els.saveBtn.addEventListener('click', () => {
   if (!state.snapshotUrl) return;
   const a = document.createElement('a');
   a.href = state.snapshotUrl;
-  a.download = `outline-rush-round-${state.round + 1}.png`;
+  a.download = `outline-rush-${state.mode === 'elim' ? 'level' : 'round'}-${state.mode === 'elim' ? state.level : state.round + 1}.png`;
   a.click();
 });
 els.judgeButtons.querySelectorAll('button').forEach((btn) => {
-  btn.addEventListener('click', () => selfJudgeScore(Number(btn.dataset.score)));
+  btn.addEventListener('click', () => resolveScore(Number(btn.dataset.score)));
 });

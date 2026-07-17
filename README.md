@@ -23,12 +23,22 @@ Think *Hole in the Wall*, but the wall is a wobbly TikTok-style doodle.
    your height, limb lengths, shoulder width, and where you're standing.
    Every outline is then generated *from your body*, so it fits no matter how
    far from the camera you are. (You can also skip the scan.)
-4. Each round shows one of six poses (Star Jump, T-Pose, Muscle Flex,
-   Disco Fever, Flamingo, Invisible Chair) with a shrinking timer
-   (6s → 3s as rounds progress). The outline re-anchors to wherever you're
-   standing at the start of each round.
-5. When the timer hits zero: 📸 snap, score, verdict. Save the photo if it's
+4. **5 warm-up rounds** of easier poses with a shrinking timer, then…
+5. **☠️ ELIMINATION TIME**: one pose per level, and you must beat a target
+   score to survive. Each level the target rises (45 → 80), the timer shrinks
+   (4.5s → 2s), the pose pool gets harder (balance poses: Teapot, Karate
+   Crane, Tipsy Tightrope, Leaning Tower…), and the outline itself slowly
+   *shrinks*. Survive as many levels as you can — your final rank goes from
+   🧱 First-Round Faller to 🏆 Balance Deity.
+6. When the timer hits zero: 📸 snap, score, verdict. Save the photo if it's
    funny enough to post.
+
+The countdown has a tense soundtrack: accelerating tick-tock, heartbeat, and
+a rising panic whine, synthesized in WebAudio (plus a sad trombone when
+you're eliminated). Want the actual trend sound instead? Drop an audio file
+at `assets/tension.mp3` — if it's present the game plays it during every
+countdown instead of the synthesized track. (No audio ships with the repo
+for copyright reasons.)
 
 ## How it works
 
@@ -67,4 +77,7 @@ js/game.js      – game loop, scan mode, outline rendering, scoring, audio
 ```
 
 Add a new pose by appending an angle set to `POSES` in `js/game.js`
-(0° = limb pointing down, 90° = straight out, 180° = straight up).
+(0° = limb pointing down, 90° = straight out, 180° = straight up; negative
+angles cross inward). Optional `lean` tilts the upper body for balance poses,
+and `difficulty` (1–3) controls when it appears — warm-up rounds use 1–2,
+elimination levels 5+ use only 3.
