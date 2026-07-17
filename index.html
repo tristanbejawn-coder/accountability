@@ -36,32 +36,30 @@
 
     <button id="skip-scan" class="btn ghost skip hidden">Skip scan ➜</button>
 
-    <!-- Round result overlay -->
+    <!-- Self-judge overlay (only when auto-scoring is unavailable) -->
     <div id="result-overlay" class="overlay hidden">
       <div class="card result-card">
-        <div id="result-score" class="result-score">0 pts</div>
-        <div id="result-verdict" class="result-verdict"></div>
+        <div class="result-verdict">🤔 Auto-scoring unavailable — how did you do?</div>
         <img id="snapshot-img" alt="Your attempt" />
-        <div id="judge-buttons" class="judge-buttons hidden">
+        <div id="judge-buttons" class="judge-buttons">
           <button class="btn" data-score="100">😎 Nailed it</button>
           <button class="btn" data-score="50">😅 Half in</button>
           <button class="btn" data-score="0">🙈 Missed</button>
-        </div>
-        <div class="result-actions">
-          <button id="save-btn" class="btn ghost">💾 Save photo</button>
-          <button id="next-btn" class="btn">Next pose ➜</button>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Final screen -->
+  <!-- Final screen: score + rollercoaster photo wall -->
   <section id="final-screen" class="screen hidden">
     <h1 class="title small">Game Over!</h1>
-    <div class="card">
-      <div id="final-score" class="result-score">0 / 600</div>
+    <div class="card final-card">
+      <div id="final-score" class="result-score">0 pts</div>
       <div id="final-rank" class="result-verdict"></div>
+      <div id="gallery" class="gallery"></div>
+      <p class="gallery-hint">Tap a photo to save it</p>
       <div class="result-actions">
+        <button id="strip-btn" class="btn">💾 Save photo strip</button>
         <button id="again-btn" class="btn big">↻ Play Again</button>
         <button id="rescan-btn" class="btn ghost">🛸 Re-scan player</button>
       </div>

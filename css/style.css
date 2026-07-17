@@ -231,6 +231,55 @@ body {
   justify-content: center;
 }
 
+/* Final-screen photo wall */
+
+.final-card {
+  max-height: 88vh;
+  max-height: 88dvh;
+  overflow-y: auto;
+}
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.gallery figure {
+  margin: 0;
+  min-width: 0; /* stop long captions from stretching their grid column */
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.gallery img {
+  width: 100%;
+  border: 2px solid var(--ink);
+  border-radius: 0.7rem 0.4rem 0.8rem 0.4rem / 0.4rem 0.8rem 0.4rem 0.7rem;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.gallery img:hover {
+  transform: rotate(-1.5deg) scale(1.04);
+}
+
+.gallery figcaption {
+  font-size: 0.72rem;
+  text-align: center;
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gallery-hint {
+  font-size: 0.85rem;
+  opacity: 0.6;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .btn {
     transition: none;

@@ -30,8 +30,15 @@ Think *Hole in the Wall*, but the wall is a wobbly TikTok-style doodle.
    Crane, Tipsy Tightrope, Leaning Tower…), and the outline itself slowly
    *shrinks*. Survive as many levels as you can — your final rank goes from
    🧱 First-Round Faller to 🏆 Balance Deity.
-6. When the timer hits zero: 📸 snap, score, verdict. Save the photo if it's
-   funny enough to post.
+6. When the timer hits zero: 📸 snap, score, and a big on-screen (and spoken!)
+   verdict — then the next round starts automatically. The whole game is
+   hands-free after you press Start: pose names, tips, and score commentary
+   are announced out loud via speech synthesis, so nobody has to walk back
+   to the phone.
+7. At the end you get the **photo wall** — every round's snapshot with the
+   outline and score burned in, rollercoaster-style. Tap any photo to save
+   it, or hit *Save photo strip* to download all of them composed into one
+   shareable image.
 
 The countdown has a tense soundtrack: accelerating tick-tock, heartbeat, and
 a rising panic whine, synthesized in WebAudio (plus a sad trombone when

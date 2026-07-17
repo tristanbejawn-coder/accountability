@@ -1,8 +1,12 @@
 // Outline Rush — scan yourself, then fit inside the doodle outline before
-// time runs out. Survive 5 rounds, then it's ELIMINATION TIME.
+// time runs out. Survive 5 rounds, then it's ELIMINATION TIME. The whole
+// game runs hands-free: big text + voice announcements, auto-advancing
+// rounds, and a rollercoaster-style photo wall at the end.
 
 const NORMAL_ROUNDS = 5;
 const NORMAL_SECONDS = [6, 5, 5, 4, 4];
+const GET_READY_MS = 2600;
+const RESULT_MS = 4000;
 const SCAN_HOLD_MS = 1400;
 const SCAN_COLOR = '#59f7ff';
 
@@ -33,6 +37,20 @@ const POSES = [
     arms: { L: [168, 170], R: [168, 170] }, legs: { L: [2, 2], R: [2, 2] }, lean: 14 },
 ];
 
+// Funny score commentary, picked at random per band.
+const COMMENTS = [
+  { min: 90, color: '#7dff9c', lines: ['ARE YOU LIQUID?!', 'Absolute shapeshifter!', 'The outline never stood a chance!'] },
+  { min: 75, color: '#7dff9c', lines: ['PERFECT FIT!', 'Chef\'s kiss geometry!', 'Outline? Demolished!'] },
+  { min: 55, color: '#ffe14d', lines: ['Nice squeeze!', 'The outline is mildly impressed.', 'So close to greatness!'] },
+  { min: 35, color: '#ffe14d', lines: ['Half of you made it…', 'Your left leg missed the memo.', 'A bold interpretation!'] },
+  { min: 0, color: '#ff5c5c', lines: ['The outline wins!', 'Were you even trying?!', 'That was… certainly a shape.', 'My grandma fits better!'] },
+];
+
+function commentFor(score) {
+  const band = COMMENTS.find((b) => score >= b.min);
+  return { text: band.lines[Math.floor(Math.random() * band.lines.length)], color: band.color };
+}
+
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 let W = 0;
@@ -45,16 +63,16 @@ video.muted = true;
 const els = {};
 for (const id of [
   'start-screen', 'game-screen', 'final-screen', 'result-overlay',
-  'start-btn', 'next-btn', 'again-btn', 'rescan-btn', 'save-btn', 'skip-scan',
+  'start-btn', 'again-btn', 'rescan-btn', 'skip-scan',
   'judge-buttons', 'hud', 'round-label', 'pose-label', 'score-label',
-  'result-score', 'result-verdict', 'snapshot-img', 'final-score',
-  'final-rank', 'start-error',
+  'snapshot-img', 'final-score', 'final-rank', 'start-error',
+  'gallery', 'strip-btn',
 ]) {
   els[id.replace(/-([a-z])/g, (m, c) => c.toUpperCase())] = document.getElementById(id);
 }
 
 const state = {
-  phase: 'idle', // idle | loading | scan | calibrated | elim-intro | getready | posing | scoring | result | final
+  phase: 'idle', // idle | loading | scan | calibrated | elim-intro | getready | posing | scoring | judging | result | final
   mode: 'normal', // normal | elim
   round: 0,
   level: 1,
@@ -68,7 +86,11 @@ const state = {
   ringFrames: [],
   fillFrame: null,
   targetMask: null,
+  lastSnap: null,
   snapshotUrl: null,
+  shots: [],       // rollercoaster photo wall: {url, label, score}
+  result: null,    // {headline, color, comment, sub}
+  resultUntil: 0,
   calibVideo: null, // measured calibration in video pixels, null = defaults
   notice: '',
   noticeUntil: 0,
@@ -76,6 +98,21 @@ const state = {
   scanGhost: null,
   calibratedAt: 0,
 };
+
+// ---------------------------------------------------------------------------
+// Voice — the game announces poses and results so nobody reads the phone.
+// ---------------------------------------------------------------------------
+
+function speak(text) {
+  try {
+    if (!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text.replace(/[⭐✈️💪🕺🪑🦩🏺🫖🥋🎪🗼☠️…—]/g, ''));
+    u.rate = 1.05;
+    u.pitch = 0.85;
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
 
 // ---------------------------------------------------------------------------
 // Audio — synthesized blips, tension track, and stings. If assets/tension.mp3
@@ -223,7 +260,7 @@ function resizeCanvas() {
   canvas.height = H;
   state.scanGhost = null; // rebuilt lazily at the new size
   if (state.currentPose &&
-      ['getready', 'posing', 'scoring', 'result'].includes(state.phase)) {
+      ['getready', 'posing', 'scoring'].includes(state.phase)) {
     prepareRoundArt(state.currentPose, currentShrink());
   }
 }
@@ -395,6 +432,7 @@ function updateScan(now) {
     setPhase('calibrated');
     state.calibratedAt = now;
     playLockChirp();
+    speak('Calibrated! Let\'s play!');
     setTimeout(beginRounds, 1500);
   }
 }
@@ -451,6 +489,13 @@ function drawScan(now) {
     ctx.lineTo(cx, cy + sy2 * len);
   }
   ctx.stroke();
+
+  // What is happening & why — the scan explainer.
+  if (!locked) {
+    drawFittedText('🛸 BODY SCAN', H * 0.05, H * 0.055, SCAN_COLOR);
+    drawFittedText('I measure you so every outline fits YOUR body', H * 0.05 + H * 0.07, H * 0.028, '#fff');
+    drawFittedText('Whole body in frame · arms wide · legs apart · hold still', H * 0.05 + H * 0.105, H * 0.028, '#fff');
+  }
 
   // Ghost of the scan pose
   const ghost = scanGhost();
@@ -555,13 +600,6 @@ function computeScore(personMaskCanvas) {
   return Math.round(100 * Math.min(1, 0.65 * coverage + 0.35 * precision));
 }
 
-function verdictFor(score) {
-  if (score >= 80) return { text: 'PERFECT FIT!', good: true };
-  if (score >= 60) return { text: 'Nice squeeze!', good: true };
-  if (score >= 35) return { text: 'Halfway in...', good: false };
-  return { text: 'The outline wins!', good: false };
-}
-
 // ---------------------------------------------------------------------------
 // Render loop
 // ---------------------------------------------------------------------------
@@ -597,33 +635,51 @@ function render(now) {
         ctx.drawImage(state.ringFrames[Math.floor(now / 160) % state.ringFrames.length], 0, 0);
       }
       if (state.phase === 'getready') {
-        drawBigText('GET READY!', state.mode === 'elim' ? '#ff5c5c' : '#ffe14d');
+        drawBigText(state.currentPose.name.toUpperCase(),
+          state.mode === 'elim' ? '#ff5c5c' : '#ffe14d');
+        drawFittedText(state.currentPose.tip,
+          H * 0.06 + Math.min(H * 0.15, W * 0.18) * 1.1, H * 0.04, '#fff');
       } else {
         const remaining = Math.max(0, state.deadline - now);
         const secs = Math.ceil(remaining / 1000);
         drawBigText(String(secs), remaining < 1500 ? '#ff5c5c' : '#ffffff');
+        if (state.mode === 'elim') {
+          drawFittedText(`☠️ BEAT ${state.threshold}`,
+            H * 0.06 + H * 0.155, H * 0.034, '#ff9db5');
+        }
         if (remaining <= 0) {
           setPhase('scoring');
           captureAndScore();
         }
-      }
-      if (state.mode === 'elim') {
-        const fs = Math.round(H * 0.034);
-        ctx.font = `bold ${fs}px "Comic Sans MS", "Chalkboard SE", cursive, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.lineWidth = Math.max(3, fs * 0.12);
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
-        ctx.fillStyle = '#ff9db5';
-        const label = `☠️ BEAT ${state.threshold}`;
-        ctx.strokeText(label, W / 2, H * 0.06 + H * 0.155);
-        ctx.fillText(label, W / 2, H * 0.06 + H * 0.155);
       }
       break;
     }
     case 'scoring':
       drawBigText('📸', '#ffffff');
       break;
+    case 'judging':
+      if (state.lastSnap) ctx.drawImage(state.lastSnap, 0, 0);
+      break;
+    case 'result': {
+      if (state.lastSnap) ctx.drawImage(state.lastSnap, 0, 0);
+      const r = state.result;
+      if (r) {
+        drawBigText(r.headline, r.color);
+        drawFittedText(r.comment,
+          H * 0.06 + Math.min(H * 0.15, W * 0.18) * 1.1, H * 0.05, '#fff');
+        if (r.sub) {
+          drawFittedText(r.sub,
+            H * 0.06 + Math.min(H * 0.15, W * 0.18) * 1.1 + H * 0.065,
+            H * 0.032, '#ff9db5');
+        }
+      }
+      // auto-advance progress bar along the bottom
+      const frac = Math.min(1, Math.max(0, 1 - (state.resultUntil - now) / RESULT_MS));
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+      ctx.fillRect(0, H - Math.max(4, H * 0.006), W * frac, Math.max(4, H * 0.006));
+      if (now >= state.resultUntil) advance();
+      break;
+    }
   }
 
   if (state.notice && now < state.noticeUntil) {
@@ -732,6 +788,8 @@ function startScan() {
   state.calibVideo = null;
   resetScan();
   setPhase('scan');
+  speak('Body scan time! I\'ll measure you so the outlines fit your body. ' +
+    'Stand back so I can see all of you, spread your arms wide, and hold still.');
 }
 
 function skipScan() {
@@ -746,6 +804,7 @@ function beginRounds() {
   state.round = 0;
   state.level = 1;
   state.totalScore = 0;
+  state.shots = [];
   showScreen('game');
   nextRound();
 }
@@ -774,11 +833,12 @@ function launchRound(pose, duration) {
 
   if (state.mode === 'elim') {
     els.roundLabel.textContent = `☠️ Level ${state.level}`;
-    els.poseLabel.textContent = `${pose.emoji} ${pose.name} — ${pose.tip}`;
+    speak(`Level ${state.level}. ${pose.name}! ${pose.tip} Beat ${state.threshold}!`);
   } else {
     els.roundLabel.textContent = `Round ${state.round + 1}/${NORMAL_ROUNDS}`;
-    els.poseLabel.textContent = `${pose.emoji} ${pose.name} — ${pose.tip}`;
+    speak(`${pose.name}! ${pose.tip}`);
   }
+  els.poseLabel.textContent = `${pose.emoji} ${pose.name} — ${pose.tip}`;
   els.scoreLabel.textContent = `⭐ ${state.totalScore}`;
 
   setPhase('getready');
@@ -787,7 +847,7 @@ function launchRound(pose, duration) {
     state.deadline = performance.now() + state.roundDuration * 1000;
     setPhase('posing');
     startTension(state.roundDuration * 1000, state.mode === 'elim');
-  }, 2000);
+  }, GET_READY_MS);
 }
 
 function nextRound() {
@@ -800,9 +860,10 @@ function startElimination() {
   els.resultOverlay.classList.add('hidden');
   setPhase('elim-intro');
   elimSting();
+  speak('Elimination time! Beat the target score, or you are out!');
   setTimeout(() => {
     if (state.phase === 'elim-intro') nextElimLevel();
-  }, 3200);
+  }, 3600);
 }
 
 function elimPool() {
@@ -833,27 +894,20 @@ async function captureAndScore() {
 
   sg.drawImage(state.fillFrame, 0, 0);
   sg.drawImage(state.ringFrames[0], 0, 0);
-
-  setPhase('result');
-  els.resultOverlay.classList.remove('hidden');
+  state.lastSnap = snap;
 
   if (det && det.maskCanvas) {
     const score = computeScore(det.maskCanvas);
     stampScore(snap, score);
-    finalizeSnapshot(snap);
+    state.snapshotUrl = snap.toDataURL('image/png');
     resolveScore(score);
   } else {
-    finalizeSnapshot(snap);
-    els.resultScore.textContent = '🤔';
-    els.resultVerdict.textContent = 'Auto-scoring unavailable — how did you do?';
-    els.judgeButtons.classList.remove('hidden');
-    els.nextBtn.classList.add('hidden');
+    // Model unavailable: the one interaction we can't avoid — self-judging.
+    state.snapshotUrl = snap.toDataURL('image/png');
+    els.snapshotImg.src = state.snapshotUrl;
+    els.resultOverlay.classList.remove('hidden');
+    setPhase('judging');
   }
-}
-
-function finalizeSnapshot(snapCanvas) {
-  state.snapshotUrl = snapCanvas.toDataURL('image/png');
-  els.snapshotImg.src = state.snapshotUrl;
 }
 
 function stampScore(snapCanvas, score) {
@@ -868,32 +922,44 @@ function stampScore(snapCanvas, score) {
   g.fillText(`${score} pts`, W - fs * 0.4, H - fs * 0.5);
 }
 
-// Shared by auto-scoring and the self-judge buttons.
+// Shared by auto-scoring and the self-judge buttons. Shows the big-text
+// result on the frozen frame and auto-advances — no tapping required.
 function resolveScore(score) {
+  els.resultOverlay.classList.add('hidden');
   state.totalScore += score;
-  els.resultScore.textContent = `${score} pts`;
-  els.judgeButtons.classList.add('hidden');
-  els.nextBtn.classList.remove('hidden');
   els.scoreLabel.textContent = `⭐ ${state.totalScore}`;
+
+  const pose = state.currentPose;
+  state.shots.push({
+    url: state.snapshotUrl,
+    label: `${pose.emoji} ${pose.name}`,
+    score,
+  });
+
+  const c = commentFor(score);
+  const result = { headline: `${score} pts`, color: c.color, comment: c.text, sub: '' };
 
   if (state.mode === 'elim') {
     state.lastSurvived = score >= state.threshold;
     if (state.lastSurvived) {
-      els.resultVerdict.textContent = `😅 SURVIVED! (needed ${state.threshold})`;
-      els.nextBtn.textContent = `Level ${state.level + 1} ➜`;
+      result.sub = `😅 SURVIVED — needed ${state.threshold}`;
       playFanfare(true);
+      speak(`${score} points. ${c.text} Survived!`);
     } else {
-      els.resultVerdict.textContent = `☠️ ELIMINATED! (needed ${state.threshold})`;
-      els.nextBtn.textContent = 'See results ➜';
+      result.comment = 'ELIMINATED!';
+      result.color = '#ff5c5c';
+      result.sub = `☠️ Needed ${state.threshold} to survive`;
       sadTrombone();
+      speak(`${score} points. Eliminated!`);
     }
   } else {
-    const verdict = verdictFor(score);
-    els.resultVerdict.textContent = verdict.text;
-    els.nextBtn.textContent =
-      state.round >= NORMAL_ROUNDS - 1 ? '☠️ Elimination time ➜' : 'Next pose ➜';
-    playFanfare(verdict.good);
+    playFanfare(score >= 55);
+    speak(`${score} points. ${c.text}`);
   }
+
+  state.result = result;
+  state.resultUntil = performance.now() + RESULT_MS;
+  setPhase('result');
 }
 
 function advance() {
@@ -925,6 +991,8 @@ function showFinal() {
   els.finalScore.textContent = `${state.totalScore} pts`;
   els.finalRank.textContent =
     `☠️ Knocked out at Level ${state.level} — ${rankForLevel(state.level)}`;
+  buildGallery();
+  speak(`Game over! ${state.totalScore} points. Check out your photos!`);
   showScreen('final');
 }
 
@@ -935,12 +1003,105 @@ function showScreen(name) {
 }
 
 // ---------------------------------------------------------------------------
+// Photo wall — every round's snapshot, like the rollercoaster photo booth.
+// ---------------------------------------------------------------------------
+
+function downloadUrl(url, name) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+}
+
+function buildGallery() {
+  els.gallery.innerHTML = '';
+  state.shots.forEach((s, i) => {
+    const fig = document.createElement('figure');
+    const img = document.createElement('img');
+    img.src = s.url;
+    img.alt = `${s.label} — ${s.score} pts`;
+    img.title = 'Tap to save this photo';
+    img.addEventListener('click', () => downloadUrl(s.url, `outline-rush-${i + 1}.png`));
+    const cap = document.createElement('figcaption');
+    cap.textContent = `${s.label} · ${s.score}`;
+    fig.appendChild(img);
+    fig.appendChild(cap);
+    els.gallery.appendChild(fig);
+  });
+  els.stripBtn.classList.toggle('hidden', !state.shots.length);
+}
+
+// Composes all shots into one downloadable photo-strip image.
+async function composeStrip() {
+  const shots = state.shots;
+  if (!shots.length) return null;
+  const imgs = await Promise.all(shots.map((s) => new Promise((res) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => res(null);
+    im.src = s.url;
+  })));
+
+  const first = imgs.find(Boolean);
+  if (!first) return null;
+  const cellW = 480;
+  const cellH = Math.round(cellW * (first.height / first.width));
+  const cols = shots.length <= 4 ? 2 : 3;
+  const rows = Math.ceil(shots.length / cols);
+  const pad = 18;
+  const header = 150;
+  const labelH = 46;
+
+  const c = mkCanvas(cols * (cellW + pad) + pad, header + rows * (cellH + labelH + pad) + pad);
+  const g = c.getContext('2d');
+  g.fillStyle = '#14121f';
+  g.fillRect(0, 0, c.width, c.height);
+
+  g.textAlign = 'center';
+  g.textBaseline = 'top';
+  g.fillStyle = '#ffe14d';
+  g.font = 'bold 56px "Comic Sans MS", "Chalkboard SE", cursive, sans-serif';
+  g.fillText('OUTLINE RUSH 🖍️', c.width / 2, 26);
+  g.fillStyle = '#fff';
+  g.font = 'bold 30px "Comic Sans MS", "Chalkboard SE", cursive, sans-serif';
+  g.fillText(`${state.totalScore} pts — ${rankForLevel(state.level)}`, c.width / 2, 96);
+
+  imgs.forEach((im, i) => {
+    if (!im) return;
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = pad + col * (cellW + pad);
+    const y = header + row * (cellH + labelH + pad);
+    g.save();
+    g.translate(x, y);
+    g.beginPath();
+    g.rect(0, 0, cellW, cellH);
+    g.clip();
+    drawCover(g, im, im.width, im.height, cellW, cellH, false);
+    g.restore();
+    g.strokeStyle = '#fff';
+    g.lineWidth = 4;
+    g.strokeRect(x, y, cellW, cellH);
+    g.fillStyle = '#fff';
+    g.font = 'bold 26px "Comic Sans MS", "Chalkboard SE", cursive, sans-serif';
+    g.fillText(`${shots[i].label} · ${shots[i].score} pts`, x + cellW / 2, y + cellH + 8);
+  });
+
+  return c.toDataURL('image/png');
+}
+
+async function saveStrip() {
+  const url = await composeStrip();
+  if (url) downloadUrl(url, 'outline-rush-photostrip.png');
+  return url;
+}
+
+// ---------------------------------------------------------------------------
 // Wire-up
 // ---------------------------------------------------------------------------
 
 els.startBtn.addEventListener('click', startGame);
 els.skipScan.addEventListener('click', skipScan);
-els.nextBtn.addEventListener('click', advance);
 els.againBtn.addEventListener('click', beginRounds);
 els.rescanBtn.addEventListener('click', () => {
   if (!Tracker.ready()) {
@@ -950,13 +1111,7 @@ els.rescanBtn.addEventListener('click', () => {
   showScreen('game');
   startScan();
 });
-els.saveBtn.addEventListener('click', () => {
-  if (!state.snapshotUrl) return;
-  const a = document.createElement('a');
-  a.href = state.snapshotUrl;
-  a.download = `outline-rush-${state.mode === 'elim' ? 'level' : 'round'}-${state.mode === 'elim' ? state.level : state.round + 1}.png`;
-  a.click();
-});
+els.stripBtn.addEventListener('click', saveStrip);
 els.judgeButtons.querySelectorAll('button').forEach((btn) => {
   btn.addEventListener('click', () => resolveScore(Number(btn.dataset.score)));
 });
