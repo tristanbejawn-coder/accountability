@@ -71,20 +71,33 @@ const ARMS = [
   () => ({ L: [RI(162, 170), RI(166, 174)], R: [RI(88, 92), RI(88, 92)], tip: 'one arm up, one out', d: 0.5 }),
   () => ({ L: [RI(105, 118), RI(108, 120)], R: [RI(60, 72), RI(62, 75)], tip: 'tilt your wings', d: 0.5 }),
   () => ({ L: [RI(88, 95), RI(200, 215)], R: [RI(148, 160), RI(152, 165)], tip: 'one flex, one sky-point', d: 0.5 }),
+  () => { const a = [RI(178, 184), RI(179, 185)]; return { L: a, R: a.slice(), tip: 'palms together overhead like a prayer', d: 0 }; },
+  () => ({ L: [RI(22, 30), RI(18, 26)], R: [RI(166, 172), RI(168, 175)], tip: 'one hand to the sky, one to the floor', d: 0.5 }),
+  () => { const a = [RI(14, 22), RI(-18, -8)]; return { L: a, R: a.slice(), tip: 'hands down between your knees', d: 0 }; },
 ];
 
-// Each leg archetype: angles, tip, difficulty score, and whether it balances
-// on one foot (raised) or crouches (squat). Raised = a leg off the ground!
+// Each leg archetype: angles, tip, difficulty score, and kind:
+//   ground  — both feet planted
+//   squat   — crouching, both feet planted
+//   cross   — scissored stance
+//   raised  — one foot off the ground (yoga balance!)
+//   air     — BOTH feet off the ground; the outline floats and the player
+//             has to time a jump for the snap. extreme sets the L7+ pool.
 const LEGS = [
-  { n: 11, gen: () => { const a = [RI(2, 6), RI(2, 6)]; return { L: a, R: a.slice(), tip: 'feet together', d: 0, kind: 'ground' }; } },
-  { n: 8, gen: () => { const a = [RI(16, 26), RI(17, 27)]; return { L: a, R: a.slice(), tip: 'legs wide', d: 0, kind: 'ground' }; } },
-  { n: 10, gen: () => { const a = [RI(32, 44), RI(-18, -8)]; return { L: a, R: a.slice(), tip: 'squat down', d: 0.5, kind: 'squat' }; } },
-  { n: 10, gen: () => { const a = [RI(48, 60), RI(-32, -18)]; return { L: a, R: a.slice(), tip: 'goddess squat, knees way out', d: 1, kind: 'squat' }; } },
-  { n: 12, gen: () => ({ L: [RI(0, 4), RI(0, 4)], R: [RI(58, 68), RI(-62, -48)], tip: 'foot tucked to your knee', d: 1, kind: 'raised' }) },
-  { n: 12, gen: () => ({ L: [RI(2, 5), RI(2, 5)], R: [RI(82, 95), RI(4, 14)], tip: 'knee up high', d: 1, kind: 'raised' }) },
-  { n: 10, gen: () => ({ L: [RI(2, 6), RI(2, 6)], R: [RI(72, 88), RI(70, 88)], tip: 'kick a leg out to the side', d: 2, kind: 'raised' }) },
-  { n: 8, gen: () => ({ L: [RI(-16, -12), RI(-18, -14)], R: [RI(-28, -22), RI(-30, -24)], tip: 'cross your legs', d: 1, kind: 'cross' }) },
-  { n: 8, gen: () => ({ L: [RI(26, 34), RI(-14, -6)], R: [RI(6, 10), RI(6, 10)], tip: 'half lunge', d: 0.5, kind: 'ground' }) },
+  { n: 6, gen: () => { const a = [RI(2, 6), RI(2, 6)]; return { L: a, R: a.slice(), tip: 'feet together', d: 0, kind: 'ground' }; } },
+  { n: 6, gen: () => { const a = [RI(16, 26), RI(17, 27)]; return { L: a, R: a.slice(), tip: 'legs wide', d: 0, kind: 'ground' }; } },
+  { n: 8, gen: () => ({ L: [RI(36, 44), RI(-22, -14)], R: [RI(12, 16), RI(10, 14)], tip: 'deep warrior lunge', d: 1, kind: 'ground' }) },
+  { n: 8, gen: () => { const a = [RI(32, 44), RI(-18, -8)]; return { L: a, R: a.slice(), tip: 'squat down', d: 0.5, kind: 'squat' }; } },
+  { n: 8, gen: () => { const a = [RI(48, 60), RI(-32, -18)]; return { L: a, R: a.slice(), tip: 'goddess squat, knees way out', d: 1, kind: 'squat' }; } },
+  { n: 6, gen: () => { const a = [RI(58, 66), RI(-40, -28)]; return { L: a, R: a.slice(), tip: 'crouch right down like a frog', d: 1.5, kind: 'squat' }; } },
+  { n: 7, gen: () => ({ L: [RI(-16, -12), RI(-18, -14)], R: [RI(-28, -22), RI(-30, -24)], tip: 'cross your legs', d: 1, kind: 'cross' }) },
+  { n: 10, gen: () => ({ L: [RI(0, 4), RI(0, 4)], R: [RI(58, 68), RI(-62, -48)], tip: 'foot tucked to your knee', d: 1, kind: 'raised' }) },
+  { n: 10, gen: () => ({ L: [RI(2, 5), RI(2, 5)], R: [RI(82, 95), RI(4, 14)], tip: 'knee up high', d: 1, kind: 'raised' }) },
+  { n: 6, gen: () => ({ L: [RI(2, 6), RI(2, 6)], R: [RI(72, 88), RI(70, 88)], tip: 'kick a leg out to the side', d: 2, kind: 'raised', extreme: true }) },
+  { n: 5, gen: () => ({ L: [RI(2, 5), RI(2, 5)], R: [RI(98, 112), RI(96, 112)], tip: 'kick your leg sky-high', d: 2.5, kind: 'raised', extreme: true }) },
+  { n: 4, gen: () => ({ L: [RI(3, 6), RI(3, 6)], R: [RI(76, 86), RI(-30, -18)], tip: 'turn sideways, sprinter knee drive', d: 2, kind: 'raised', extreme: true }) },
+  { n: 3, gen: () => { const a = [RI(52, 62), RI(-38, -26)]; return { L: a, R: a.slice(), tip: 'JUMP and tuck as the timer hits zero', d: 3, kind: 'air', extreme: true, air: R(0.05, 0.08) }; } },
+  { n: 2, gen: () => { const a = [RI(24, 30), RI(26, 32)]; return { L: a, R: a.slice(), tip: 'JUMP into a star as the timer hits zero', d: 3, kind: 'air', extreme: true, air: R(0.06, 0.09) }; } },
 ];
 
 // --- Names ------------------------------------------------------------------
@@ -117,7 +130,7 @@ const usedSignatures = new Set();
 function signature(pose) {
   const q = (a) => a.map((v) => Math.round(v / 8)).join(',');
   return [q(pose.arms.L), q(pose.arms.R), q(pose.legs.L), q(pose.legs.R),
-    Math.round((pose.lean || 0) / 4)].join('|');
+    Math.round((pose.lean || 0) / 4), pose.air ? 'air' : ''].join('|');
 }
 
 function makeName() {
@@ -146,7 +159,11 @@ for (const { n, gen } of LEGS) {
       const legTip = legs.tip;
       const legD = legs.d;
       const kind = legs.kind;
-      if (kind === 'raised' && rnd() < 0.5) legs = mirror(legs);
+      const extreme = !!legs.extreme;
+      const air = legs.air;
+      if ((kind === 'raised' || legs.L.join() !== legs.R.join()) && rnd() < 0.5) {
+        legs = mirror(legs);
+      }
 
       const armSpec = pick(ARMS)();
       const armTip = armSpec.tip;
@@ -154,21 +171,29 @@ for (const { n, gen } of LEGS) {
       let arms = { L: armSpec.L, R: armSpec.R };
       if (rnd() < 0.5 && arms.L.join() !== arms.R.join()) arms = mirror(arms);
 
-      // Lean: capped while balancing, forbidden on the side-kick tier.
+      // Lean: capped while balancing, forbidden on the extreme tiers.
       let lean = 0;
       let leanD = 0;
-      if (rnd() < 0.35 && legD < 2) {
+      if (rnd() < 0.35 && legD < 2 && !extreme) {
         const cap = kind === 'raised' ? 8 : kind === 'squat' ? 10 : 15;
         lean = Math.round(R(6, cap)) * (rnd() < 0.5 ? -1 : 1);
         leanD = Math.abs(lean) > 10 ? 1 : 0.5;
       }
 
-      const difficulty = Math.max(1, Math.min(3, Math.round(1 + armD + legD + leanD)));
+      // Awkwardness ladder: one foot off the ground is never difficulty 1,
+      // and extreme poses (side kicks, splits, sprinter, airborne) are max.
+      let difficulty = Math.round(1 + armD + legD + leanD);
+      if (kind === 'raised') difficulty = Math.max(difficulty, 2);
+      if (extreme) difficulty = 3;
+      difficulty = Math.max(1, Math.min(3, difficulty));
+
       const pose = {
         arms: { L: arms.L, R: arms.R },
         legs: { L: legs.L, R: legs.R },
       };
       if (lean) pose.lean = lean;
+      if (air) pose.air = Math.round(air * 100) / 100;
+      if (extreme) pose.extreme = true;
 
       const sig = signature(pose);
       if (usedSignatures.has(sig)) continue;
@@ -188,12 +213,17 @@ if (all.length !== 100) throw new Error(`expected 100 poses, got ${all.length}`)
 
 const counts = { 1: 0, 2: 0, 3: 0 };
 let raised = 0;
+let extreme = 0;
+let air = 0;
 for (const p of all) {
   counts[p.difficulty]++;
   const flat = [...p.legs.L, ...p.legs.R];
-  if (flat.some((a) => a >= 55)) raised++;
+  if (flat.some((a) => a >= 55) || p.air) raised++;
+  if (p.extreme) extreme++;
+  if (p.air) air++;
 }
-console.log(`100 poses: difficulty 1/2/3 = ${counts[1]}/${counts[2]}/${counts[3]}, legs-off-ground = ${raised}`);
+console.log(`100 poses: difficulty 1/2/3 = ${counts[1]}/${counts[2]}/${counts[3]}, ` +
+  `legs-off-ground = ${raised}, extreme = ${extreme}, airborne = ${air}`);
 
 // --- Emit -------------------------------------------------------------------
 

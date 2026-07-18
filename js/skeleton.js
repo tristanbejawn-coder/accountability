@@ -137,7 +137,9 @@ function buildJoints(c, pose, jitter = 0) {
 
   const lowestSole = Math.max(J.ankleL.y, J.ankleR.y) + c.personH * 0.04;
   const ox = c.anchorX;
-  const oy = c.feetY - lowestSole;
+  let oy = c.feetY - lowestSole;
+  // Airborne poses float above the ground — the player has to JUMP.
+  if (pose.air) oy -= pose.air * c.personH;
   for (const k in J) {
     J[k].x += ox + (jitter ? (Math.random() - 0.5) * jitter * c.personH : 0);
     J[k].y += oy + (jitter ? (Math.random() - 0.5) * jitter * c.personH : 0);
@@ -145,39 +147,96 @@ function buildJoints(c, pose, jitter = 0) {
   return J;
 }
 
+// A tapered limb segment: polygon between two widths plus round end caps.
+function taperedLimb(ctx, a, b, wa, wb) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  ctx.beginPath();
+  ctx.moveTo(a.x + nx * wa / 2, a.y + ny * wa / 2);
+  ctx.lineTo(b.x + nx * wb / 2, b.y + ny * wb / 2);
+  ctx.lineTo(b.x - nx * wb / 2, b.y - ny * wb / 2);
+  ctx.lineTo(a.x - nx * wa / 2, a.y - ny * wa / 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(a.x, a.y, wa / 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, wb / 2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// Human-ish silhouette: waisted torso, sloped shoulders, tapered limbs,
+// hands, feet, neck, oval head. Still a solid fill so masks/rings work.
 function drawSilhouette(ctx, J, c) {
   ctx.fillStyle = '#000';
-  ctx.strokeStyle = '#000';
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  const cap = (a, b, w) => {
-    ctx.lineWidth = w;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
+  const ph = c.personH;
+  const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const along = (from, to, dist) => {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const len = Math.hypot(dx, dy) || 1;
+    return { x: to.x + (dx / len) * dist, y: to.y + (dy / len) * dist };
   };
 
-  const armW = c.personH * 0.085;
-  const legW = c.personH * 0.105;
-
+  // Torso: shoulder line down to hip line with a pinched waist.
+  const M = lerp(J.midShoulder, J.midHip, 0.55);
+  const shOut = 0.5; // how far past the shoulder joints the torso reaches
+  const A = lerp(J.shoulderL, J.shoulderR, -shOut * 0.15);
+  const B = lerp(J.shoulderR, J.shoulderL, -shOut * 0.15);
+  const D = lerp(J.hipL, J.hipR, -0.35);
+  const C = lerp(J.hipR, J.hipL, -0.35);
+  const waist = 0.30; // pull the side control points toward the centre
+  const ctrlL = lerp(lerp(A, D, 0.5), M, waist);
+  const ctrlR = lerp(lerp(B, C, 0.5), M, waist);
   ctx.beginPath();
-  ctx.arc(J.head.x, J.head.y, c.headR * 1.15, 0, Math.PI * 2);
+  ctx.moveTo(A.x, A.y);
+  ctx.lineTo(B.x, B.y);
+  ctx.quadraticCurveTo(ctrlR.x, ctrlR.y, C.x, C.y);
+  ctx.lineTo(D.x, D.y);
+  ctx.quadraticCurveTo(ctrlL.x, ctrlL.y, A.x, A.y);
+  ctx.closePath();
   ctx.fill();
 
-  cap(J.head, J.midShoulder, c.headR);
-  cap(J.midShoulder, J.midHip, c.shoulderHalf * 2.1);
-  cap(J.shoulderL, J.shoulderR, armW);
-  cap(J.hipL, J.hipR, legW);
-  cap(J.shoulderL, J.elbowL, armW);
-  cap(J.elbowL, J.wristL, armW);
-  cap(J.shoulderR, J.elbowR, armW);
-  cap(J.elbowR, J.wristR, armW);
-  cap(J.hipL, J.kneeL, legW);
-  cap(J.kneeL, J.ankleL, legW);
-  cap(J.hipR, J.kneeR, legW);
-  cap(J.kneeR, J.ankleR, legW);
+  // Rounded deltoids and hips
+  for (const [p, r] of [[J.shoulderL, 0.055], [J.shoulderR, 0.055],
+                        [J.hipL, 0.068], [J.hipR, 0.068]]) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, ph * r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Head + neck
+  ctx.beginPath();
+  ctx.ellipse(J.head.x, J.head.y, c.headR * 1.0, c.headR * 1.16, 0, 0, Math.PI * 2);
+  ctx.fill();
+  taperedLimb(ctx, J.head, J.midShoulder, c.headR * 0.85, c.headR * 1.05);
+
+  // Arms: taper shoulder→elbow→wrist, hand bulb past the wrist
+  for (const side of ['L', 'R']) {
+    const sh = J['shoulder' + side];
+    const el = J['elbow' + side];
+    const wr = J['wrist' + side];
+    taperedLimb(ctx, sh, el, ph * 0.105, ph * 0.08);
+    taperedLimb(ctx, el, wr, ph * 0.08, ph * 0.058);
+    const hand = along(el, wr, ph * 0.025);
+    ctx.beginPath();
+    ctx.arc(hand.x, hand.y, ph * 0.042, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Legs: taper hip→knee→ankle, foot extending past the ankle
+  for (const side of ['L', 'R']) {
+    const hip = J['hip' + side];
+    const kn = J['knee' + side];
+    const an = J['ankle' + side];
+    taperedLimb(ctx, hip, kn, ph * 0.135, ph * 0.10);
+    taperedLimb(ctx, kn, an, ph * 0.10, ph * 0.062);
+    taperedLimb(ctx, an, along(kn, an, ph * 0.055), ph * 0.072, ph * 0.06);
+  }
 }
 
 // The calibration pose the scanner asks for and validates against.

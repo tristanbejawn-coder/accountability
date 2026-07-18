@@ -775,7 +775,8 @@ function skipScan() {
 
 function beginRounds() {
   state.mode = 'normal';
-  state.poses = shuffled(POSES.filter((p) => p.difficulty <= 2)).slice(0, NORMAL_ROUNDS);
+  state.poses = shuffled(POSES.filter((p) => p.difficulty <= 2 && !p.extreme))
+    .slice(0, NORMAL_ROUNDS);
   state.round = 0;
   state.level = 1;
   state.totalScore = 0;
@@ -843,11 +844,19 @@ function startElimination() {
   }, 3600);
 }
 
+// Awkwardness ladder: levels 1-2 draw difficulty 2+, levels 3-6 draw only
+// difficulty 3, and from level 7 the pool is exclusively extreme poses
+// (side kicks, sky-high kicks, sprinter balances, airborne jumps).
 function elimPool() {
-  const min = state.level >= 5 ? 3 : state.level >= 3 ? 2 : 1;
+  const lvl = state.level;
+  const fits = lvl >= 7
+    ? (p) => p.extreme
+    : lvl >= 3
+      ? (p) => p.difficulty >= 3
+      : (p) => p.difficulty >= 2;
   let pool = POSES.filter((p) =>
-    p.difficulty >= min && p !== state.currentPose && !state.usedPoses.has(p));
-  if (!pool.length) pool = POSES.filter((p) => p.difficulty >= min && p !== state.currentPose);
+    fits(p) && p !== state.currentPose && !state.usedPoses.has(p));
+  if (!pool.length) pool = POSES.filter((p) => fits(p) && p !== state.currentPose);
   if (!pool.length) pool = POSES.filter((p) => p !== state.currentPose);
   return pool;
 }

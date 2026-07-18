@@ -32,12 +32,20 @@ Think *Hole in the Wall*, but the wall is a wobbly TikTok-style doodle.
 
    The game draws from a **library of 100 poses** (`js/poses-library.js`):
    11 hand-made classics plus 89 procedurally generated ones — yoga-style
-   one-leg balances (tree tucks, high knees, full side kicks), goddess
-   squats, crossed tightropes, lunges, leans, and every arm shape from
-   overhead crosses to zigzags — each with a generated name like
+   one-leg balances (tree tucks, high knees), warrior lunges, frog crouches,
+   goddess squats, crossed tightropes, leans, and every arm shape from
+   overhead crosses to prayer hands — each with a generated name like
    *The Haunted Sasquatch* or *The Feral Windmill*. No pose repeats within
-   a game. Regenerate or extend the library with
-   `node scripts/generate-poses.mjs` (deterministic seed).
+   a game.
+
+   Difficulty is an **awkwardness ladder**: any pose with a foot off the
+   ground is at least difficulty 2, and the *extreme* tier (side kicks,
+   sky-high kicks, sideways sprinter balances, and **airborne poses** where
+   the outline floats and you must time a jump for the snap) is difficulty 3.
+   Elimination levels climb the ladder: levels 1–2 draw difficulty 2+,
+   levels 3–6 draw only difficulty 3, and level 7+ is exclusively extreme.
+   Regenerate or extend the library with `node scripts/generate-poses.mjs`
+   (deterministic seed).
 6. When the timer hits zero: 📸 snap, score, and a big on-screen (and spoken!)
    verdict — then the next round starts automatically. The whole game is
    hands-free after you press Start: pose names, tips, and score commentary
