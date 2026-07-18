@@ -60,6 +60,7 @@ const state = {
   deadline: 0,
   currentPose: null,
   ringFrames: [],
+  farRingFrames: [],
   fillFrame: null,
   targetMask: null,
   lastSnap: null,
@@ -338,42 +339,51 @@ function prepareRoundArt(pose, sizeScale = 1) {
   state.targetMask = silhouetteCanvas(calib, pose, 0);
   state.ringFrames = [0, 1, 2].map(() =>
     buildRingCanvas(silhouetteCanvas(calib, pose, 0.012), thickness, '#fff'));
-  state.fillFrame = tintCanvas(state.targetMask, 'rgba(255, 255, 255, 0.14)');
+  // Thicker ring for when the wall is far away and scaled small on screen.
+  state.farRingFrames = [0, 1, 2].map(() =>
+    buildRingCanvas(silhouetteCanvas(calib, pose, 0.012), Math.max(9, H * 0.02), '#fff'));
+  state.fillFrame = tintCanvas(state.targetMask, 'rgba(255, 255, 255, 0.18)');
   // Vanishing point the "wall" grows from — roughly the body's centre,
   // lifted for airborne poses so they scale about the floating figure.
   const airOff = (pose.air || 0) * calib.personH;
   state.pivot = { x: calib.anchorX, y: calib.feetY - calib.personH * 0.52 - airOff };
 }
 
-// Hole-in-the-Wall approach: the person-shaped gap starts far away (small)
-// and rushes to the player's plane (scale 1) as the countdown runs. Perspective
-// curve (apparent size ∝ 1/distance) so it creeps far off, then rushes in.
-const WALL_START_SCALE = 0.16;
-const WALL_EASY_ARRIVE = 0.82; // easy mode reaches the plane at 82%, then holds
+// Hole-in-the-Wall approach: the person-shaped gap starts in the distance and
+// travels to the player's plane (scale 1) as the countdown runs. A gentle
+// accelerating curve (rather than true perspective) keeps it readable on small
+// phones for the whole approach instead of slamming in at the last moment.
+const WALL_START_SCALE = 0.3;
+const WALL_EASY_ARRIVE = 0.75; // easy mode reaches the plane at 75%, then holds
 
 function wallScale(elapsedFrac) {
   let p = Math.max(0, Math.min(1, elapsedFrac));
   if (!state.hardMode) p = Math.min(1, p / WALL_EASY_ARRIVE);
-  const k = WALL_START_SCALE;
-  return k / (k + (1 - k) * (1 - p));
+  return WALL_START_SCALE + (1 - WALL_START_SCALE) * Math.pow(p, 1.7);
 }
 
-// Draws the outline (fill + wobbly ring) at approach scale `s` about the pivot,
-// with depth cues: hazy/cool/soft-glow when far, crisp/bright/white when near.
+// Draws the outline (fill + wobbly ring) at approach scale `s` about the pivot.
+// Far away it uses a pre-rendered THICK ring (compensating for the scale-down)
+// with a cyan glow; as it nears it crossfades to the crisp normal ring.
 function drawApproachingOutline(now, s) {
   const p = state.pivot || { x: W / 2, y: H / 2 };
   const near = Math.max(0, Math.min(1, (s - WALL_START_SCALE) / (1 - WALL_START_SCALE)));
+  const frame = Math.floor(now / 160) % 3;
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.scale(s, s);
   ctx.translate(-p.x, -p.y);
-  ctx.globalAlpha = 0.4 + 0.6 * near;
+  ctx.globalAlpha = 0.6 + 0.4 * near;
   if (state.fillFrame) ctx.drawImage(state.fillFrame, 0, 0);
+  ctx.shadowColor = `rgba(120, 220, 255, ${0.85 * (1 - near)})`;
+  ctx.shadowBlur = (1 - near) * H * 0.04;
+  if (state.farRingFrames.length && near < 1) {
+    ctx.globalAlpha = 0.95 * (1 - near);
+    ctx.drawImage(state.farRingFrames[frame], 0, 0);
+  }
   if (state.ringFrames.length) {
-    ctx.shadowColor = `rgba(120, 220, 255, ${0.7 * (1 - near)})`;
-    ctx.shadowBlur = (1 - near) * H * 0.05;
-    ctx.globalAlpha = 0.55 + 0.45 * near;
-    ctx.drawImage(state.ringFrames[Math.floor(now / 160) % state.ringFrames.length], 0, 0);
+    ctx.globalAlpha = 0.35 + 0.65 * near;
+    ctx.drawImage(state.ringFrames[frame], 0, 0);
   }
   ctx.restore();
 }
@@ -386,8 +396,33 @@ function resetScan() {
   state.scan = {
     holdMs: 0, samples: [], lastNose: null, lastDetectAt: 0,
     lastFrameAt: 0, det: null, inPose: false, ticks: 0,
+    framing: 'search', lastInstr: '', lastInstrAt: 0, saidHold: false,
   };
 }
+
+// Is the player at a good distance / position on SCREEN? Uses canvas-space
+// landmarks so cover-cropping is accounted for. Returns:
+//   'search' (no body), 'closer', 'back', 'center', or 'ok'.
+function evalFraming(lms) {
+  const core = [LM.NOSE, LM.HIP_L, LM.HIP_R, LM.ANKLE_L, LM.ANKLE_R];
+  if (!lms || core.some((i) => (lms[i].visibility ?? 1) < 0.5)) return 'search';
+  const nose = vidToCanvas(lms[LM.NOSE]);
+  const ankleY = Math.max(vidToCanvas(lms[LM.ANKLE_L]).y, vidToCanvas(lms[LM.ANKLE_R]).y);
+  const bodyH = ankleY - nose.y;
+  const headTop = nose.y - bodyH * 0.12;
+  const feetY = ankleY + bodyH * 0.07;
+  const personH = feetY - headTop;
+  if (personH < H * 0.48) return 'closer';
+  if (personH > H * 0.85 || headTop < H * 0.02 || feetY > H * 0.995) return 'back';
+  if (Math.abs(nose.x - W / 2) > W * 0.28) return 'center';
+  return 'ok';
+}
+
+const FRAMING_PROMPTS = {
+  closer: { text: 'STEP CLOSER!', say: 'Step closer!' },
+  back: { text: 'STEP BACK!', say: 'Step back a bit!' },
+  center: { text: 'MOVE TO THE MIDDLE!', say: 'Move to the middle!' },
+};
 
 function scanGhost() {
   if (!state.scanGhost) {
@@ -415,6 +450,24 @@ function updateScan(now) {
   const vh = video.videoHeight || H;
   const lms = sc.det && sc.det.landmarks;
   sc.inPose = !!(lms && isScanPose(lms, vw, vh));
+
+  // Distance/position coaching: calibration only accumulates once the player
+  // fills the screen nicely (not tiny, not clipping, roughly centred).
+  sc.framing = evalFraming(lms);
+  const prompt = FRAMING_PROMPTS[sc.framing];
+  if (prompt && (sc.lastInstr !== sc.framing) && now - sc.lastInstrAt > 2500) {
+    sc.lastInstr = sc.framing;
+    sc.lastInstrAt = now;
+    sc.saidHold = false;
+    speak(prompt.say);
+  }
+  if (sc.framing !== 'ok') {
+    sc.inPose = false;
+  } else if (sc.inPose && !sc.saidHold) {
+    sc.saidHold = true;
+    sc.lastInstr = '';
+    speak('Perfect! Hold still!');
+  }
 
   if (sc.inPose) {
     const nose = { x: lms[LM.NOSE].x * vw, y: lms[LM.NOSE].y * vh };
@@ -549,12 +602,21 @@ function drawScan(now) {
     ctx.restore();
   }
 
+  // Big framing prompt while the player finds the right distance.
+  if (!locked && FRAMING_PROMPTS[sc.framing]) {
+    ctx.save();
+    ctx.globalAlpha = 0.75 + 0.25 * Math.sin(now / 180);
+    drawFittedText(FRAMING_PROMPTS[sc.framing].text, H * 0.4, H * 0.062, '#ffcf3f');
+    ctx.restore();
+  }
+
   // Status readout
   const pct = Math.min(100, Math.round((sc.holdMs / SCAN_HOLD_MS) * 100));
   let status;
   if (locked) status = `LOCK ✓  SUBJECT CALIBRATED`;
   else if (!lms) status = 'SEARCHING FOR SUBJECT…';
-  else if (!sc.inPose) status = 'SUBJECT DETECTED — ARMS OUT WIDE, LEGS APART';
+  else if (FRAMING_PROMPTS[sc.framing]) status = `RANGE — ${FRAMING_PROMPTS[sc.framing].text}`;
+  else if (!sc.inPose) status = 'IN RANGE ✓ — ARMS OUT WIDE, LEGS APART';
   else status = `CALIBRATING ${pct}% — HOLD STILL`;
 
   const fs = Math.max(13, Math.round(H * 0.022));
