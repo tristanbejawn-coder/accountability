@@ -4,28 +4,35 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Outline Rush — scan, pose, fit the outline!</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
   <!-- Start screen -->
   <section id="start-screen" class="screen">
-    <h1 class="title">Outline<span class="accent">Rush</span></h1>
-    <p class="tagline">The TikTok outline trend... as a game.</p>
-    <div class="card">
-      <ol class="how-to">
-        <li>📷 Stand back so your whole body is in frame.</li>
-        <li>🛸 Hold the scan pose — we measure you and size the outlines to fit.</li>
-        <li>✏️ A doodle outline appears. Fit inside it before the countdown hits zero.</li>
-        <li>📸 SNAP! You get scored on how well you fit.</li>
-      </ol>
+    <div class="hero">
+      <canvas id="hero-art" width="720" height="330" aria-hidden="true"></canvas>
+      <h1 class="logo"><span class="logo-top">OUTLINE</span><span class="logo-rush">RUSH</span></h1>
+      <p class="tagline">Fit the shape. Beat the wall.</p>
+    </div>
+
+    <div class="menu">
+      <div class="pills">
+        <span class="pill">🛸 Scans your body</span>
+        <span class="pill">🕳️ The wall rushes in</span>
+        <span class="pill">☠️ Survive elimination</span>
+        <span class="pill">📸 Photo wall at the end</span>
+      </div>
       <div id="mode-toggle" class="mode-toggle" role="group" aria-label="Difficulty">
         <button type="button" data-hard="0">😌 Easy<span>wall waits for you</span></button>
         <button type="button" data-hard="1">😰 Hard<span>wall hits at zero</span></button>
       </div>
-      <button id="start-btn" class="btn big">▶ Start Game</button>
+      <button id="start-btn" class="btn big play">PLAY</button>
       <p id="start-error" class="error"></p>
+      <p class="privacy">Runs entirely in your browser — no video ever leaves your device.</p>
     </div>
-    <p class="privacy">Everything runs in your browser — no video is uploaded anywhere.</p>
   </section>
 
   <!-- Game screen (fullscreen stage) -->

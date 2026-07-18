@@ -9,6 +9,7 @@ const GET_READY_MS = 2600;
 const RESULT_MS = 4000;
 const SCAN_HOLD_MS = 1400;
 const SCAN_COLOR = '#59f7ff';
+const GAME_FONT = "'Lilita One', 'Arial Rounded MT Bold', 'Segoe UI', system-ui, sans-serif";
 
 // Funny score commentary, picked at random per band.
 const COMMENTS = [
@@ -714,11 +715,11 @@ function render(now) {
 function drawFittedText(text, y, baseFs, color) {
   ctx.save();
   let fs = Math.round(baseFs);
-  ctx.font = `bold ${fs}px "Comic Sans MS", "Chalkboard SE", cursive, sans-serif`;
+  ctx.font = `bold ${fs}px ${GAME_FONT}`;
   const width = ctx.measureText(text).width;
   if (width > W * 0.94) {
     fs = Math.round(fs * (W * 0.94) / width);
-    ctx.font = `bold ${fs}px "Comic Sans MS", "Chalkboard SE", cursive, sans-serif`;
+    ctx.font = `bold ${fs}px ${GAME_FONT}`;
   }
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
@@ -941,7 +942,7 @@ async function captureAndScore() {
 function stampScore(snapCanvas, score) {
   const g = snapCanvas.getContext('2d');
   const fs = Math.round(H * 0.06);
-  g.font = `bold ${fs}px "Comic Sans MS", "Chalkboard SE", cursive, sans-serif`;
+  g.font = `bold ${fs}px ${GAME_FONT}`;
   g.textAlign = 'right';
   g.lineWidth = Math.max(4, fs * 0.12);
   g.strokeStyle = 'rgba(0,0,0,0.8)';
@@ -1088,10 +1089,10 @@ async function composeStrip() {
   g.textAlign = 'center';
   g.textBaseline = 'top';
   g.fillStyle = '#ffe14d';
-  g.font = 'bold 56px "Comic Sans MS", "Chalkboard SE", cursive, sans-serif';
+  g.font = `bold 56px ${GAME_FONT}`;
   g.fillText('OUTLINE RUSH 🖍️', c.width / 2, 26);
   g.fillStyle = '#fff';
-  g.font = 'bold 30px "Comic Sans MS", "Chalkboard SE", cursive, sans-serif';
+  g.font = `bold 30px ${GAME_FONT}`;
   g.fillText(`${state.totalScore} pts — ${rankForLevel(state.level)}`, c.width / 2, 96);
 
   imgs.forEach((im, i) => {
@@ -1111,7 +1112,7 @@ async function composeStrip() {
     g.lineWidth = 4;
     g.strokeRect(x, y, cellW, cellH);
     g.fillStyle = '#fff';
-    g.font = 'bold 26px "Comic Sans MS", "Chalkboard SE", cursive, sans-serif';
+    g.font = `bold 26px ${GAME_FONT}`;
     g.fillText(`${shots[i].label} · ${shots[i].score} pts`, x + cellW / 2, y + cellH + 8);
   });
 
@@ -1143,6 +1144,35 @@ els.stripBtn.addEventListener('click', saveStrip);
 els.judgeButtons.querySelectorAll('button').forEach((btn) => {
   btn.addEventListener('click', () => resolveScore(Number(btn.dataset.score)));
 });
+
+// Decorative hero art on the start screen: three tinted silhouettes from the
+// pose library, drawn with the real in-game renderer.
+(function heroArt() {
+  const c = document.getElementById('hero-art');
+  if (!c) return;
+  const g = c.getContext('2d');
+  const picks = [POSES[0], POSES[5], POSES[3]]; // Star Jump, Flamingo, Disco
+  const colors = ['#ff4d8d', '#ffcf3f', '#59f7ff'];
+  picks.forEach((p, i) => {
+    const off = document.createElement('canvas');
+    off.width = c.width;
+    off.height = c.height;
+    const og = off.getContext('2d');
+    const calib = defaultCalib(c.width, c.height * 0.98);
+    calib.anchorX = c.width * (0.24 + 0.26 * i);
+    for (const k of CALIB_LENGTH_KEYS) calib[k] *= 0.62;
+    calib.feetY = c.height * 0.97;
+    og.save();
+    og.translate(0, 0);
+    drawSilhouette(og, buildJoints(calib, p, 0), calib);
+    og.restore();
+    og.globalCompositeOperation = 'source-in';
+    og.fillStyle = colors[i];
+    og.fillRect(0, 0, off.width, off.height);
+    g.globalAlpha = 0.92;
+    g.drawImage(off, 0, 0);
+  });
+})();
 
 // Easy/Hard wall-arrival toggle on the start screen.
 try {

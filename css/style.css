@@ -1,4 +1,5 @@
-/* Outline Rush — doodle / hand-drawn aesthetic, fullscreen stage */
+/* Outline Rush — mobile-game visual language: chunky display type, vibrant
+   gradient world, glossy pressable buttons. Single committed dark-arcade look. */
 
 * {
   margin: 0;
@@ -7,20 +8,27 @@
 }
 
 :root {
-  --bg: #14121f;
+  --bg-deep: #170f38;
+  --bg-mid: #2c1566;
   --ink: #ffffff;
-  --accent: #ffe14d;
-  --pop: #ff5c8a;
-  --doodle-font: "Comic Sans MS", "Chalkboard SE", "Segoe Print", cursive, sans-serif;
+  --gold: #ffcf3f;
+  --pink: #ff4d8d;
+  --green-hi: #5eea6a;
+  --green-lo: #22b04a;
+  --green-edge: #157f36;
+  --scan: #59f7ff;
+  --game-font: 'Lilita One', 'Arial Rounded MT Bold', 'Segoe UI', system-ui, sans-serif;
 }
 
 body {
-  background: var(--bg);
-  background-image:
-    radial-gradient(circle at 15% 20%, rgba(255, 92, 138, 0.12) 0 140px, transparent 141px),
-    radial-gradient(circle at 85% 75%, rgba(255, 225, 77, 0.1) 0 180px, transparent 181px);
+  background:
+    radial-gradient(60vmax 60vmax at 85% -10%, rgba(255, 77, 141, 0.35), transparent 60%),
+    radial-gradient(50vmax 50vmax at -10% 100%, rgba(89, 247, 255, 0.18), transparent 60%),
+    linear-gradient(160deg, var(--bg-mid), var(--bg-deep) 65%);
+  background-attachment: fixed;
   color: var(--ink);
-  font-family: var(--doodle-font);
+  font-family: var(--game-font);
+  letter-spacing: 0.015em;
   min-height: 100vh;
   overflow: hidden;
 }
@@ -32,7 +40,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1.2rem;
+  gap: 1.4rem;
   padding: 1.5rem;
   overflow-y: auto;
 }
@@ -41,54 +49,179 @@ body {
   display: none !important;
 }
 
-.title {
-  font-size: clamp(2.6rem, 8vw, 5rem);
-  letter-spacing: 0.02em;
-  transform: rotate(-2deg);
-  text-shadow: 4px 4px 0 rgba(0, 0, 0, 0.6);
-}
+/* --- Hero / logo ---------------------------------------------------------- */
 
-.title.small {
-  font-size: clamp(2rem, 6vw, 3.4rem);
-}
-
-.accent {
-  color: var(--accent);
-}
-
-.tagline {
-  font-size: 1.15rem;
-  opacity: 0.85;
-  transform: rotate(1deg);
-}
-
-/* Hand-drawn card: the uneven border-radius makes edges look sketched. */
-.card {
-  background: rgba(255, 255, 255, 0.05);
-  border: 3px solid var(--ink);
-  border-radius: 1.2rem 0.6rem 1.4rem 0.7rem / 0.7rem 1.4rem 0.6rem 1.2rem;
-  padding: 1.6rem 2rem;
-  max-width: 34rem;
+.hero {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.1rem;
+  gap: 0.4rem;
 }
 
-.how-to {
-  list-style: none;
+#hero-art {
+  width: min(78vw, 330px);
+  height: auto;
+  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.45));
+  margin-bottom: -1.2rem;
+}
+
+.logo {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
-  font-size: 1.05rem;
+  align-items: center;
+  line-height: 0.86;
+  text-align: center;
+  transform: rotate(-2deg);
 }
 
-/* Easy / Hard mode toggle */
+.logo-top {
+  font-size: clamp(2.6rem, 11vw, 4.2rem);
+  color: #fff;
+  text-shadow:
+    0 3px 0 #2a1b5e,
+    0 6px 0 rgba(0, 0, 0, 0.35),
+    0 12px 28px rgba(0, 0, 0, 0.5);
+}
+
+.logo-rush {
+  font-size: clamp(3.4rem, 15vw, 5.6rem);
+  background: linear-gradient(180deg, #ffe98a 15%, var(--gold) 45%, #ff8b3d 80%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter:
+    drop-shadow(0 3px 0 #7c2d12)
+    drop-shadow(0 7px 0 rgba(0, 0, 0, 0.35))
+    drop-shadow(0 14px 30px rgba(0, 0, 0, 0.5));
+}
+
+.tagline {
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  margin-top: 0.7rem;
+}
+
+/* --- Menu ----------------------------------------------------------------- */
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: min(92vw, 24rem);
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+.pill {
+  font-size: 0.86rem;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  padding: 0.32rem 0.75rem;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* --- Buttons: glossy, 3D bottom edge, pressable --------------------------- */
+
+.btn {
+  font-family: var(--game-font);
+  font-size: 1.1rem;
+  letter-spacing: 0.03em;
+  color: #3c2a00;
+  background: linear-gradient(180deg, #ffe98a, var(--gold) 55%, #f5a623);
+  border: none;
+  border-radius: 16px;
+  padding: 0.65rem 1.5rem;
+  cursor: pointer;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.55),
+    0 4px 0 #a86b00,
+    0 10px 18px rgba(0, 0, 0, 0.35);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.15s ease;
+}
+
+.btn:hover {
+  filter: brightness(1.06);
+}
+
+.btn:active {
+  transform: translateY(4px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.55),
+    0 0 0 #a86b00,
+    0 4px 10px rgba(0, 0, 0, 0.35);
+}
+
+.btn:disabled {
+  filter: saturate(0.4) brightness(0.8);
+  cursor: wait;
+}
+
+.btn.big {
+  font-size: 1.6rem;
+  padding: 0.85rem 2.4rem;
+  border-radius: 20px;
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+  background: linear-gradient(180deg, var(--green-hi), var(--green-lo) 70%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.5),
+    0 6px 0 var(--green-edge),
+    0 14px 26px rgba(0, 0, 0, 0.45);
+}
+
+.btn.big:active {
+  transform: translateY(5px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.5),
+    0 1px 0 var(--green-edge),
+    0 6px 12px rgba(0, 0, 0, 0.4);
+}
+
+.btn.big.play {
+  font-size: 2rem;
+  padding: 0.9rem 0;
+  width: 100%;
+  letter-spacing: 0.12em;
+}
+
+.btn.ghost {
+  background: rgba(16, 10, 40, 0.55);
+  color: var(--ink);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.35),
+    0 4px 0 rgba(0, 0, 0, 0.45),
+    0 10px 18px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.btn.ghost:active {
+  transform: translateY(4px);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.35),
+    0 0 0 rgba(0, 0, 0, 0.45),
+    0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+/* --- Mode toggle: segmented control --------------------------------------- */
 
 .mode-toggle {
   display: flex;
-  gap: 0.6rem;
+  gap: 0.5rem;
   width: 100%;
+  background: rgba(10, 6, 28, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  padding: 0.4rem;
 }
 
 .mode-toggle button {
@@ -96,77 +229,79 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.15rem;
-  font-family: var(--doodle-font);
-  font-size: 1.15rem;
-  font-weight: bold;
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.05);
-  border: 3px solid rgba(255, 255, 255, 0.4);
-  border-radius: 1rem 0.5rem 1.1rem 0.6rem / 0.6rem 1.1rem 0.5rem 1rem;
-  padding: 0.6rem 0.8rem;
+  gap: 0.1rem;
+  font-family: var(--game-font);
+  font-size: 1.05rem;
+  color: rgba(255, 255, 255, 0.75);
+  background: transparent;
+  border: none;
+  border-radius: 13px;
+  padding: 0.5rem 0.6rem;
   cursor: pointer;
-  transition: transform 0.1s ease, border-color 0.1s ease;
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .mode-toggle button span {
-  font-size: 0.72rem;
-  font-weight: normal;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.68rem;
   opacity: 0.75;
 }
 
 .mode-toggle button.active {
-  border-color: var(--accent);
-  background: rgba(255, 225, 77, 0.14);
-  transform: rotate(-1deg) scale(1.03);
-}
-
-.btn {
-  font-family: var(--doodle-font);
-  font-size: 1.1rem;
-  font-weight: bold;
-  color: #14121f;
-  background: var(--accent);
-  border: 3px solid var(--ink);
-  border-radius: 1rem 0.5rem 1.1rem 0.6rem / 0.6rem 1.1rem 0.5rem 1rem;
-  padding: 0.6rem 1.4rem;
-  cursor: pointer;
-  transform: rotate(-1deg);
-  transition: transform 0.1s ease;
-}
-
-.btn:hover {
-  transform: rotate(1deg) scale(1.05);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: wait;
-}
-
-.btn.big {
-  font-size: 1.5rem;
-  padding: 0.8rem 2.2rem;
-  background: var(--pop);
   color: #fff;
-}
-
-.btn.ghost {
-  background: rgba(10, 8, 20, 0.55);
-  color: var(--ink);
+  background: linear-gradient(180deg, var(--pink), #d62f6d);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.35),
+    0 3px 0 #8f1c46,
+    0 8px 14px rgba(0, 0, 0, 0.35);
 }
 
 .error {
-  color: #ff5c5c;
+  color: #ff7b7b;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.9rem;
   min-height: 1.2em;
 }
 
 .privacy {
-  font-size: 0.85rem;
-  opacity: 0.6;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.78rem;
+  opacity: 0.55;
+  text-align: center;
 }
 
-/* Game screen: canvas fills the viewport, HUD floats on top */
+/* --- Shared card (result / final) ----------------------------------------- */
+
+.card {
+  background: rgba(23, 15, 56, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  padding: 1.5rem 1.8rem;
+  max-width: 34rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.title {
+  font-size: clamp(2.2rem, 9vw, 3.6rem);
+  transform: rotate(-2deg);
+  text-shadow:
+    0 3px 0 #2a1b5e,
+    0 8px 22px rgba(0, 0, 0, 0.55);
+}
+
+.title.small {
+  font-size: clamp(2rem, 7vw, 3rem);
+}
+
+.accent {
+  color: var(--gold);
+}
+
+/* --- Game screen: canvas fills the viewport, HUD floats on top ------------- */
 
 #game-screen {
   position: fixed;
@@ -197,22 +332,24 @@ body {
 }
 
 .chip {
-  background: rgba(10, 8, 20, 0.55);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  border: 2px solid rgba(255, 255, 255, 0.8);
-  border-radius: 0.9rem 0.5rem 1rem 0.5rem / 0.5rem 1rem 0.5rem 0.9rem;
-  padding: 0.3rem 0.8rem;
-  font-size: clamp(0.8rem, 2.4vw, 1.05rem);
+  background: rgba(12, 7, 32, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  padding: 0.32rem 0.85rem;
+  font-size: clamp(0.8rem, 2.4vw, 1rem);
   white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 .chip.pose {
-  color: var(--accent);
+  color: var(--gold);
   white-space: normal;
   text-align: center;
   flex: 1;
   min-width: 0;
+  border-radius: 16px;
 }
 
 .btn.skip {
@@ -228,7 +365,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 8, 20, 0.75);
+  background: rgba(10, 6, 26, 0.78);
   z-index: 3;
   padding: 1rem;
 }
@@ -237,28 +374,29 @@ body {
   max-width: min(92%, 30rem);
   max-height: 94%;
   overflow-y: auto;
-  background: var(--bg);
 }
 
 .result-score {
   font-size: 3rem;
-  color: var(--accent);
-  text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.6);
+  color: var(--gold);
+  text-shadow: 0 3px 0 rgba(0, 0, 0, 0.5), 0 8px 18px rgba(0, 0, 0, 0.4);
   transform: rotate(-2deg);
 }
 
 .result-verdict {
-  font-size: 1.4rem;
-  color: var(--pop);
+  font-size: 1.35rem;
+  color: var(--pink);
   text-align: center;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4);
 }
 
 #snapshot-img {
   max-width: 100%;
   max-height: 38vh;
   object-fit: contain;
-  border: 3px solid var(--ink);
-  border-radius: 0.9rem 0.5rem 1rem 0.5rem / 0.5rem 1rem 0.5rem 0.9rem;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 16px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
 }
 
 .judge-buttons,
@@ -269,7 +407,7 @@ body {
   justify-content: center;
 }
 
-/* Final-screen photo wall */
+/* --- Final-screen photo wall ---------------------------------------------- */
 
 .final-card {
   max-height: 88vh;
@@ -294,18 +432,19 @@ body {
 
 .gallery img {
   width: 100%;
-  border: 2px solid var(--ink);
-  border-radius: 0.7rem 0.4rem 0.8rem 0.4rem / 0.4rem 0.8rem 0.4rem 0.7rem;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 12px;
   cursor: pointer;
   transition: transform 0.1s ease;
 }
 
 .gallery img:hover {
-  transform: rotate(-1.5deg) scale(1.04);
+  transform: rotate(-1.5deg) scale(1.05);
 }
 
 .gallery figcaption {
-  font-size: 0.72rem;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.7rem;
   text-align: center;
   opacity: 0.85;
   white-space: nowrap;
@@ -314,12 +453,15 @@ body {
 }
 
 .gallery-hint {
-  font-size: 0.85rem;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.8rem;
   opacity: 0.6;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .btn {
+  .btn,
+  .mode-toggle button,
+  .gallery img {
     transition: none;
   }
 }
