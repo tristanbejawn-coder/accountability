@@ -61,6 +61,7 @@ const state = {
   currentPose: null,
   ringFrames: [],
   farRingFrames: [],
+  landingRing: null,
   fillFrame: null,
   targetMask: null,
   lastSnap: null,
@@ -342,6 +343,8 @@ function prepareRoundArt(pose, sizeScale = 1) {
   // Thicker ring for when the wall is far away and scaled small on screen.
   state.farRingFrames = [0, 1, 2].map(() =>
     buildRingCanvas(silhouetteCanvas(calib, pose, 0.012), Math.max(9, H * 0.02), '#fff'));
+  // Gold landing-zone ghost marking where the wall will arrive.
+  state.landingRing = buildRingCanvas(state.targetMask, thickness, '#ffcf3f');
   state.fillFrame = tintCanvas(state.targetMask, 'rgba(255, 255, 255, 0.18)');
   // Vanishing point the "wall" grows from — roughly the body's centre,
   // lifted for airborne poses so they scale about the floating figure.
@@ -349,28 +352,69 @@ function prepareRoundArt(pose, sizeScale = 1) {
   state.pivot = { x: calib.anchorX, y: calib.feetY - calib.personH * 0.52 - airOff };
 }
 
-// Hole-in-the-Wall approach: the person-shaped gap starts in the distance and
-// travels to the player's plane (scale 1) as the countdown runs. A gentle
-// accelerating curve (rather than true perspective) keeps it readable on small
-// phones for the whole approach instead of slamming in at the last moment.
-const WALL_START_SCALE = 0.3;
-const WALL_EASY_ARRIVE = 0.75; // easy mode reaches the plane at 75%, then holds
+// Hole-in-the-Wall approach: the person-shaped gap materialises from a single
+// glowing point in the distance (the vanishing point), pops quickly up to a
+// readable size, then travels gently to the player's plane (scale 1), arriving
+// as the countdown ends.
+const WALL_POINT_SCALE = 0.04;  // "singular point" starting size
+const WALL_READABLE = 0.35;     // size after the initial pop
+const WALL_POP_FRAC = 0.16;     // fraction of the countdown spent popping
+const WALL_EASY_ARRIVE = 0.75;  // easy mode reaches the plane at 75%, then holds
 
 function wallScale(elapsedFrac) {
   let p = Math.max(0, Math.min(1, elapsedFrac));
   if (!state.hardMode) p = Math.min(1, p / WALL_EASY_ARRIVE);
-  return WALL_START_SCALE + (1 - WALL_START_SCALE) * Math.pow(p, 1.7);
+  if (p < WALL_POP_FRAC) {
+    const e = p / WALL_POP_FRAC;
+    const ease = 1 - (1 - e) * (1 - e); // ease-out pop
+    return WALL_POINT_SCALE + (WALL_READABLE - WALL_POINT_SCALE) * ease;
+  }
+  const q = (p - WALL_POP_FRAC) / (1 - WALL_POP_FRAC);
+  return WALL_READABLE + (1 - WALL_READABLE) * Math.pow(q, 1.6);
 }
 
-// Draws the outline (fill + wobbly ring) at approach scale `s` about the pivot.
-// Far away it uses a pre-rendered THICK ring (compensating for the scale-down)
-// with a cyan glow; as it nears it crossfades to the crisp normal ring.
+function vanishingPoint() {
+  return { x: W * 0.5, y: H * 0.36 };
+}
+
+// Draws the wall at approach scale `s`: a faint gold landing-zone ghost marks
+// where the outline will arrive, the shape emerges from a glowing vanishing
+// point and travels toward the player, thick-ringed and hazy while far,
+// crisp and bright as it lands.
 function drawApproachingOutline(now, s) {
   const p = state.pivot || { x: W / 2, y: H / 2 };
-  const near = Math.max(0, Math.min(1, (s - WALL_START_SCALE) / (1 - WALL_START_SCALE)));
+  const vp = vanishingPoint();
+  const f = Math.max(0, Math.min(1, (s - WALL_POINT_SCALE) / (1 - WALL_POINT_SCALE)));
+  const near = Math.max(0, Math.min(1, (s - WALL_READABLE) / (1 - WALL_READABLE)));
   const frame = Math.floor(now / 160) % 3;
+
+  // Landing zone: where the wall will end up, fading out as it arrives.
+  if (state.landingRing) {
+    ctx.save();
+    ctx.globalAlpha = 0.4 * (1 - near);
+    ctx.drawImage(state.landingRing, 0, 0);
+    ctx.restore();
+  }
+
+  // The point in the distance the wall emerges from.
+  if (f < 0.5) {
+    const glow = 1 - f * 2;
+    const r = H * 0.02 + H * 0.01 * Math.sin(now / 90);
+    const grad = ctx.createRadialGradient(vp.x, vp.y, 0, vp.x, vp.y, r * 4);
+    grad.addColorStop(0, `rgba(255, 255, 255, ${0.9 * glow})`);
+    grad.addColorStop(0.3, `rgba(120, 220, 255, ${0.55 * glow})`);
+    grad.addColorStop(1, 'rgba(120, 220, 255, 0)');
+    ctx.save();
+    ctx.fillStyle = grad;
+    ctx.fillRect(vp.x - r * 4, vp.y - r * 4, r * 8, r * 8);
+    ctx.restore();
+  }
+
+  // Wall transform: pivot glides from the vanishing point to the player's
+  // plane as the scale grows — a true "coming at you from a point" path.
+  const dp = { x: vp.x + (p.x - vp.x) * f, y: vp.y + (p.y - vp.y) * f };
   ctx.save();
-  ctx.translate(p.x, p.y);
+  ctx.translate(dp.x, dp.y);
   ctx.scale(s, s);
   ctx.translate(-p.x, -p.y);
   ctx.globalAlpha = 0.6 + 0.4 * near;
