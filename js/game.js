@@ -39,7 +39,7 @@ for (const id of [
   'start-btn', 'again-btn', 'rescan-btn', 'skip-scan',
   'judge-buttons', 'hud', 'round-label', 'pose-label', 'score-label',
   'snapshot-img', 'final-score', 'final-rank', 'start-error',
-  'gallery', 'strip-btn',
+  'gallery', 'strip-btn', 'mode-toggle',
 ]) {
   els[id.replace(/-([a-z])/g, (m, c) => c.toUpperCase())] = document.getElementById(id);
 }
@@ -51,6 +51,8 @@ const state = {
   level: 1,
   threshold: 0,
   roundDuration: 6,
+  hardMode: false, // easy: wall arrives early & waits; hard: arrives at zero
+  pivot: null,     // canvas-space vanishing point the outline grows from
   lastSurvived: true,
   poses: [],
   totalScore: 0,
@@ -336,6 +338,43 @@ function prepareRoundArt(pose, sizeScale = 1) {
   state.ringFrames = [0, 1, 2].map(() =>
     buildRingCanvas(silhouetteCanvas(calib, pose, 0.012), thickness, '#fff'));
   state.fillFrame = tintCanvas(state.targetMask, 'rgba(255, 255, 255, 0.14)');
+  // Vanishing point the "wall" grows from — roughly the body's centre,
+  // lifted for airborne poses so they scale about the floating figure.
+  const airOff = (pose.air || 0) * calib.personH;
+  state.pivot = { x: calib.anchorX, y: calib.feetY - calib.personH * 0.52 - airOff };
+}
+
+// Hole-in-the-Wall approach: the person-shaped gap starts far away (small)
+// and rushes to the player's plane (scale 1) as the countdown runs. Perspective
+// curve (apparent size ∝ 1/distance) so it creeps far off, then rushes in.
+const WALL_START_SCALE = 0.16;
+const WALL_EASY_ARRIVE = 0.82; // easy mode reaches the plane at 82%, then holds
+
+function wallScale(elapsedFrac) {
+  let p = Math.max(0, Math.min(1, elapsedFrac));
+  if (!state.hardMode) p = Math.min(1, p / WALL_EASY_ARRIVE);
+  const k = WALL_START_SCALE;
+  return k / (k + (1 - k) * (1 - p));
+}
+
+// Draws the outline (fill + wobbly ring) at approach scale `s` about the pivot,
+// with depth cues: hazy/cool/soft-glow when far, crisp/bright/white when near.
+function drawApproachingOutline(now, s) {
+  const p = state.pivot || { x: W / 2, y: H / 2 };
+  const near = Math.max(0, Math.min(1, (s - WALL_START_SCALE) / (1 - WALL_START_SCALE)));
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.scale(s, s);
+  ctx.translate(-p.x, -p.y);
+  ctx.globalAlpha = 0.4 + 0.6 * near;
+  if (state.fillFrame) ctx.drawImage(state.fillFrame, 0, 0);
+  if (state.ringFrames.length) {
+    ctx.shadowColor = `rgba(120, 220, 255, ${0.7 * (1 - near)})`;
+    ctx.shadowBlur = (1 - near) * H * 0.05;
+    ctx.globalAlpha = 0.55 + 0.45 * near;
+    ctx.drawImage(state.ringFrames[Math.floor(now / 160) % state.ringFrames.length], 0, 0);
+  }
+  ctx.restore();
 }
 
 // ---------------------------------------------------------------------------
@@ -605,17 +644,18 @@ function render(now) {
     }
     case 'getready':
     case 'posing': {
-      if (state.fillFrame) ctx.drawImage(state.fillFrame, 0, 0);
-      if (state.ringFrames.length) {
-        ctx.drawImage(state.ringFrames[Math.floor(now / 160) % state.ringFrames.length], 0, 0);
-      }
       if (state.phase === 'getready') {
+        // The wall is still far off in the distance while we announce the pose.
+        drawApproachingOutline(now, wallScale(0));
         drawBigText(state.currentPose.name.toUpperCase(),
           state.mode === 'elim' ? '#ff5c5c' : '#ffe14d');
         drawFittedText(state.currentPose.tip,
           H * 0.06 + Math.min(H * 0.15, W * 0.18) * 1.1, H * 0.04, '#fff');
       } else {
         const remaining = Math.max(0, state.deadline - now);
+        const dur = state.roundDuration * 1000;
+        const s = wallScale((dur - remaining) / dur);
+        drawApproachingOutline(now, s);
         const secs = Math.ceil(remaining / 1000);
         drawBigText(String(secs), remaining < 1500 ? '#ff5c5c' : '#ffffff');
         if (state.mode === 'elim') {
@@ -1103,3 +1143,20 @@ els.stripBtn.addEventListener('click', saveStrip);
 els.judgeButtons.querySelectorAll('button').forEach((btn) => {
   btn.addEventListener('click', () => resolveScore(Number(btn.dataset.score)));
 });
+
+// Easy/Hard wall-arrival toggle on the start screen.
+try {
+  state.hardMode = localStorage.getItem('outlineRushHard') === '1';
+} catch (e) {}
+function refreshModeToggle() {
+  els.modeToggle.querySelectorAll('button').forEach((b) =>
+    b.classList.toggle('active', (b.dataset.hard === '1') === state.hardMode));
+}
+els.modeToggle.querySelectorAll('button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    state.hardMode = btn.dataset.hard === '1';
+    try { localStorage.setItem('outlineRushHard', state.hardMode ? '1' : '0'); } catch (e) {}
+    refreshModeToggle();
+  });
+});
+refreshModeToggle();

@@ -23,8 +23,16 @@ Think *Hole in the Wall*, but the wall is a wobbly TikTok-style doodle.
    your height, limb lengths, shoulder width, and where you're standing.
    Every outline is then generated *from your body*, so it fits no matter how
    far from the camera you are. (You can also skip the scan.)
-4. **5 warm-up rounds** of easier poses with a shrinking timer, then…
-5. **☠️ ELIMINATION TIME**: one pose per level, and you must beat a target
+4. **Hole-in-the-Wall approach**: each round, the person-shaped outline starts
+   tiny in the distance and rushes toward you on a perspective curve, arriving
+   at your standing plane exactly as the countdown hits zero — so you must
+   already be in the pose. It's hazy, cool-tinted and soft-glowing while far
+   off, and resolves to crisp bright white as it reaches you. Pick the arrival
+   timing on the start screen: **😌 Easy** parks the wall at your plane early
+   and waits so you can settle, while **😰 Hard** slams it in at the exact
+   instant of the snap.
+5. **5 warm-up rounds** of easier poses with a shrinking timer, then…
+6. **☠️ ELIMINATION TIME**: one pose per level, and you must beat a target
    score to survive. Each level the target rises (45 → 80), the timer shrinks
    (4.5s → 2s), the pose pool gets harder, and the outline itself slowly
    *shrinks*. Survive as many levels as you can — your final rank goes from
@@ -46,12 +54,12 @@ Think *Hole in the Wall*, but the wall is a wobbly TikTok-style doodle.
    levels 3–6 draw only difficulty 3, and level 7+ is exclusively extreme.
    Regenerate or extend the library with `node scripts/generate-poses.mjs`
    (deterministic seed).
-6. When the timer hits zero: 📸 snap, score, and a big on-screen (and spoken!)
+7. When the timer hits zero: 📸 snap, score, and a big on-screen (and spoken!)
    verdict — then the next round starts automatically. The whole game is
    hands-free after you press Start: pose names, tips, and score commentary
    are announced out loud via speech synthesis, so nobody has to walk back
    to the phone.
-7. At the end you get the **photo wall** — every round's snapshot with the
+8. At the end you get the **photo wall** — every round's snapshot with the
    outline and score burned in, rollercoaster-style. Tap any photo to save
    it, or hit *Save photo strip* to download all of them composed into one
    shareable image.
