@@ -30,7 +30,10 @@
         <button type="button" data-hard="1">😰 Hard<span>wall hits at zero</span></button>
       </div>
       <button id="handpick-btn" class="handpick-toggle" type="button" aria-pressed="false">
-        🖐 Pick poses by hand<span>spin a wheel between rounds</span>
+        🖐 Pick poses by hand<span>3 bubbles above your head, bonus points</span>
+      </button>
+      <button id="voice-btn" class="handpick-toggle" type="button">
+        🔊 Voice settings<span id="voice-summary">Device voice</span>
       </button>
       <button id="start-btn" class="btn big play">PLAY</button>
       <p id="start-error" class="error"></p>
@@ -74,6 +77,37 @@
       </div>
     </div>
   </section>
+
+  <!-- Voice settings modal -->
+  <div id="voice-modal" class="overlay hidden">
+    <div class="card voice-card">
+      <div class="pause-title">🔊 Voice</div>
+      <div id="voice-provider" class="mode-toggle" role="group" aria-label="Voice provider">
+        <button type="button" data-provider="device">📱 Device<span>free, built in</span></button>
+        <button type="button" data-provider="eleven">✨ ElevenLabs<span>your account</span></button>
+      </div>
+
+      <div id="device-voice-row" class="voice-row">
+        <label for="device-voice">Voice</label>
+        <select id="device-voice"></select>
+      </div>
+
+      <div id="eleven-rows" class="voice-eleven hidden">
+        <label for="eleven-key">API key <span class="key-note">(stored only in this browser)</span></label>
+        <input id="eleven-key" type="password" placeholder="sk_..." autocomplete="off" />
+        <div class="voice-row">
+          <button id="eleven-connect" class="btn">Connect</button>
+          <select id="eleven-voice" class="hidden"></select>
+        </div>
+        <p id="eleven-status" class="voice-status"></p>
+      </div>
+
+      <div class="result-actions">
+        <button id="voice-test" class="btn ghost">▶ Test</button>
+        <button id="voice-done" class="btn">Done</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Final screen: score + rollercoaster photo wall -->
   <section id="final-screen" class="screen hidden">

@@ -68,11 +68,20 @@ Think *Hole in the Wall*, but the wall is a wobbly TikTok-style doodle.
    shareable image.
 
 **🖐 Pick poses by hand** (optional, toggle on the home screen): before each
-round a difficulty wheel appears — wave your hand in a circle to spin it
-through Easy / Medium / Hard, stop and it settles, and the next pose is drawn
-from the difficulty you landed on. If you don't spin within a few seconds it
-auto-picks, so the hands-free flow still works. Uses the same pose-landmark
-tracking as the scan (tracks your raised wrist's angle around your chest).
+round, three difficulty bubbles appear above your head — **Easy (×1)**,
+**Medium (×1.25)**, **Hard (×1.5)**. Reach a hand up and hold it in a bubble
+for ~0.85s to lock it; the next pose is drawn from that difficulty and the
+round's score is multiplied by the shown bonus. The multiplier is displayed
+during the round (`⚡ 1.5× BONUS`) and in the result (`⚡ 62 × 1.5 BONUS`).
+If you don't pick within 8s it defaults to Easy, so the hands-free flow still
+works. Uses the same pose-landmark tracking as the scan.
+
+**🔊 Voice** (settings on the home screen): choose between the free built-in
+**device voice** (pick any installed voice) or **ElevenLabs**. For ElevenLabs,
+paste your own API key — it's stored only in your browser's `localStorage`,
+never sent anywhere but ElevenLabs and never committed — then Connect to list
+and pick a voice. All announcements route through it, with automatic fallback
+to the device voice on any error.
 
 The countdown has a tense soundtrack: accelerating tick-tock, heartbeat, and
 a rising panic whine, synthesized in WebAudio (plus a sad trombone when

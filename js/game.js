@@ -63,8 +63,9 @@ const state = {
   threshold: 0,
   roundDuration: 6,
   hardMode: false, // easy: wall arrives early & waits; hard: arrives at zero
-  handPick: false, // spin-the-wheel difficulty picker between rounds
-  choose: null,    // wheel state during the 'choose' phase
+  handPick: false, // hand-controlled difficulty picker between rounds
+  choose: null,    // picker state during the 'choose' phase
+  roundMult: 1,    // score multiplier from the chosen difficulty
   pivot: null,     // canvas-space vanishing point the outline grows from
   lastSurvived: true,
   poses: [],
@@ -98,16 +99,80 @@ const state = {
 // Voice — the game announces poses and results so nobody reads the phone.
 // ---------------------------------------------------------------------------
 
-function speak(text) {
+const voice = {
+  provider: 'device', // 'device' | 'eleven'
+  deviceVoiceURI: '',
+  elevenKey: '',
+  elevenVoiceId: '',
+  audio: null,
+  cache: new Map(),
+};
+
+function loadVoiceSettings() {
+  try {
+    voice.provider = localStorage.getItem('orVoiceProvider') || 'device';
+    voice.deviceVoiceURI = localStorage.getItem('orDeviceVoice') || '';
+    voice.elevenKey = localStorage.getItem('orElevenKey') || '';
+    voice.elevenVoiceId = localStorage.getItem('orElevenVoice') || '';
+  } catch (e) {}
+}
+loadVoiceSettings();
+
+function stripEmoji(text) {
+  return text.replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}…—]/gu, '').trim();
+}
+
+function speakDevice(text) {
   try {
     if (!('speechSynthesis' in window)) return;
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(
-      text.replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}…—]/gu, ''));
+    const u = new SpeechSynthesisUtterance(text);
+    if (voice.deviceVoiceURI) {
+      const v = speechSynthesis.getVoices().find((x) => x.voiceURI === voice.deviceVoiceURI);
+      if (v) u.voice = v;
+    }
     u.rate = 1.05;
     u.pitch = 0.85;
     speechSynthesis.speak(u);
   } catch (e) {}
+}
+
+// ElevenLabs TTS from the browser using the player's own key (localStorage).
+// Falls back to the device voice on any error. Caches audio per phrase.
+async function speakEleven(text) {
+  if (!voice.elevenKey || !voice.elevenVoiceId) return speakDevice(text);
+  try {
+    if (voice.audio) { voice.audio.pause(); voice.audio = null; }
+    let url = voice.cache.get(text);
+    if (!url) {
+      const res = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${voice.elevenVoiceId}?optimize_streaming_latency=3&output_format=mp3_44100_64`,
+        {
+          method: 'POST',
+          headers: { 'xi-api-key': voice.elevenKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text,
+            model_id: 'eleven_turbo_v2_5',
+            voice_settings: { stability: 0.4, similarity_boost: 0.8 },
+          }),
+        });
+      if (!res.ok) throw new Error('eleven ' + res.status);
+      url = URL.createObjectURL(await res.blob());
+      if (voice.cache.size < 60) voice.cache.set(text, url);
+    }
+    const a = new Audio(url);
+    voice.audio = a;
+    await a.play();
+  } catch (e) {
+    speakDevice(text);
+  }
+}
+
+function speak(text) {
+  const clean = stripEmoji(text);
+  if (!clean) return;
+  if (voice.provider === 'eleven') speakEleven(clean);
+  else speakDevice(clean);
 }
 
 // ---------------------------------------------------------------------------
@@ -833,9 +898,13 @@ function render(now) {
       drawApproachingOutline(now, s);
       const secs = Math.ceil(remaining / 1000);
       drawBigText(String(secs), remaining < 1500 ? '#ff5c5c' : '#ffffff');
+      let badgeY = H * 0.06 + H * 0.155;
+      if (state.roundMult > 1) {
+        drawFittedText(`⚡ ${state.roundMult}× BONUS`, badgeY, H * 0.036, '#ffcf3f');
+        badgeY += H * 0.05;
+      }
       if (state.mode === 'elim') {
-        drawFittedText(`☠️ BEAT ${state.threshold}`,
-          H * 0.06 + H * 0.155, H * 0.034, '#ff9db5');
+        drawFittedText(`☠️ BEAT ${state.threshold}`, badgeY, H * 0.034, '#ff9db5');
       }
       if (remaining <= 0) {
         setPhase('scoring');
@@ -1131,14 +1200,15 @@ function quitToMenu() {
   showScreen('start');
 }
 
-// ---- Hand-controlled difficulty wheel ------------------------------------
+// ---- Hand-controlled difficulty picker: 3 bubbles above your head --------
 
-const DIFF_WHEEL = [
-  { d: 1, label: 'EASY', emoji: '😌', color: '#5eea6a' },
-  { d: 2, label: 'MEDIUM', emoji: '😐', color: '#ffcf3f' },
-  { d: 3, label: 'HARD', emoji: '🔥', color: '#ff4d8d' },
+const DIFF_CHOICES = [
+  { d: 1, label: 'EASY', emoji: '😌', color: '#5eea6a', mult: 1 },
+  { d: 2, label: 'MEDIUM', emoji: '😐', color: '#ffcf3f', mult: 1.25 },
+  { d: 3, label: 'HARD', emoji: '🔥', color: '#ff4d8d', mult: 1.5 },
 ];
-const CHOOSE_TIMEOUT_MS = 7000; // auto-pick if the player doesn't spin
+const CHOOSE_TIMEOUT_MS = 8000; // auto-pick (easy) if no hand reaches a bubble
+const HOLD_TO_PICK_MS = 850;    // hold a hand in a bubble this long to lock
 
 // Pick an unused pose of the chosen difficulty (falls back gracefully).
 function pickPoseOfDifficulty(d) {
@@ -1153,158 +1223,158 @@ function pickPoseOfDifficulty(d) {
   return shuffled(pool)[0];
 }
 
-// Enter the wheel. `after` launches the round once a difficulty is locked.
+// Enter the picker. `after(difficulty, mult)` launches the round on lock.
 function enterChoose(after) {
   state.choose = {
-    angle: 0, vel: 0, lastAngle: null, lastAt: 0,
-    slowSince: 0, locked: false, after,
+    hold: [0, 0, 0], locked: false, picked: -1, after,
+    bubbles: null, head: null,
     deadline: performance.now() + CHOOSE_TIMEOUT_MS,
+    lastFrameAt: 0, lastDetectAt: 0, det: null,
   };
   setPhase('choose');
-  speak('Spin your hand to pick your difficulty!');
+  speak('Reach a hand up to pick your difficulty! Medium and hard score bonus points.');
 }
 
-// Which wheel segment sits under the fixed pointer (top of the wheel).
-function wheelIndex(angle) {
-  const seg = (2 * Math.PI) / DIFF_WHEEL.length;
-  // pointer is at the top; segment 0 centred there at angle 0
-  let a = (-angle + seg / 2) % (2 * Math.PI);
-  if (a < 0) a += 2 * Math.PI;
-  return Math.floor(a / seg) % DIFF_WHEEL.length;
+// Lay the three bubbles out in an arc above the player's head, kept within a
+// comfortable upper band and inside the screen edges.
+function layoutBubbles(headCanvas) {
+  const r = Math.min(W, H) * 0.1;
+  const spread = Math.min(W * 0.3, r * 3);
+  const baseY = Math.max(Math.min(headCanvas.y - H * 0.14, H * 0.34), H * 0.22);
+  const cx = Math.max(spread + r, Math.min(headCanvas.x, W - spread - r));
+  return DIFF_CHOICES.map((opt, i) => ({
+    ...opt,
+    x: cx + (i - 1) * spread,
+    y: baseY - Math.abs(i - 1) * H * 0.012, // gentle arc
+    r,
+  }));
 }
 
 function updateChoose(now) {
   const c = state.choose;
   if (!c || c.locked) return;
-  if (now - (c.lastDetectAt || 0) > 55) {
+  const dt = c.lastFrameAt ? now - c.lastFrameAt : 16;
+  c.lastFrameAt = now;
+  if (now - c.lastDetectAt > 55) {
     c.lastDetectAt = now;
     c.det = Tracker.detect(video);
   }
   const lms = c.det && c.det.landmarks;
 
-  // Track the higher (raised) visible wrist, angle around the chest.
-  let driven = false;
+  // Anchor bubbles to the head (nose); keep last known spot if it drops out.
+  if (lms && (lms[LM.NOSE].visibility ?? 1) > 0.5) {
+    c.head = vidToCanvas(lms[LM.NOSE]);
+  }
+  if (!c.head) c.head = { x: W / 2, y: H * 0.32 };
+  c.bubbles = layoutBubbles(c.head);
+
+  // Which bubbles currently contain a visible wrist?
+  const inside = [false, false, false];
   if (lms) {
-    const cx = ((lms[LM.SHOULDER_L].x + lms[LM.SHOULDER_R].x) / 2);
-    const cy = ((lms[LM.SHOULDER_L].y + lms[LM.SHOULDER_R].y) / 2);
-    const cands = [LM.WRIST_L, LM.WRIST_R]
-      .filter((i) => (lms[i].visibility ?? 1) > 0.5)
-      .map((i) => ({ i, y: lms[i].y }));
-    if (cands.length) {
-      const wrist = cands.sort((a, b) => a.y - b.y)[0];
-      const w = lms[wrist.i];
-      const ang = Math.atan2(w.y - cy, w.x - cx);
-      if (c.lastAngle !== null) {
-        let d = ang - c.lastAngle;
-        while (d > Math.PI) d -= 2 * Math.PI;
-        while (d < -Math.PI) d += 2 * Math.PI;
-        const dt = Math.max(1, now - c.lastAt);
-        // Mirror correction: on-screen the video is flipped, so invert.
-        const inst = -d / dt * 1000; // rad/s
-        if (Math.abs(inst) > 0.4) {
-          c.vel = c.vel * 0.5 + inst * 0.5;
-          driven = true;
-        }
-      }
-      c.lastAngle = ang;
-      c.lastAt = now;
+    for (const wi of [LM.WRIST_L, LM.WRIST_R]) {
+      if ((lms[wi].visibility ?? 1) < 0.5) continue;
+      const p = vidToCanvas(lms[wi]);
+      c.bubbles.forEach((b, i) => {
+        if (Math.hypot(p.x - b.x, p.y - b.y) < b.r * 1.15) inside[i] = true;
+      });
     }
   }
 
-  // Integrate + friction.
-  const dt = 1 / 60;
-  c.angle += c.vel * dt;
-  c.vel *= 0.94;
-
-  // Lock when it has been spun and then settles for ~0.7s.
-  const spinning = Math.abs(c.vel) > 0.35;
-  if (spinning) {
-    c.slowSince = 0;
-    c.everSpun = true;
-  } else if (c.everSpun) {
-    if (!c.slowSince) c.slowSince = now;
-    if (now - c.slowSince > 700) lockChoice(now);
+  // Charge the held bubble, decay the others; lock when one fills.
+  for (let i = 0; i < 3; i++) {
+    if (inside[i]) {
+      const before = c.hold[i];
+      c.hold[i] = Math.min(HOLD_TO_PICK_MS, c.hold[i] + dt);
+      if (Math.floor(before / 210) !== Math.floor(c.hold[i] / 210)) {
+        beep(620 + i * 180, 0.06, 'sine', 0.08);
+      }
+      if (c.hold[i] >= HOLD_TO_PICK_MS) { lockChoice(i); return; }
+    } else {
+      c.hold[i] = Math.max(0, c.hold[i] - dt * 1.5);
+    }
   }
-  if (!c.locked && now >= c.deadline) lockChoice(now);
+
+  if (now >= c.deadline) lockChoice(0); // default to Easy
 }
 
-function lockChoice(now) {
+function lockChoice(i) {
   const c = state.choose;
   if (!c || c.locked) return;
   c.locked = true;
-  // Snap the wheel to the nearest segment centre.
-  const idx = wheelIndex(c.angle);
-  const seg = (2 * Math.PI) / DIFF_WHEEL.length;
-  c.angle = -idx * seg;
-  const choice = DIFF_WHEEL[idx];
+  c.picked = i;
+  const choice = DIFF_CHOICES[i];
   playLockChirp();
-  speak(`${choice.label}!`);
-  scheduleTimer(() => c.after(choice.d), 800);
+  speak(`${choice.label}!` + (choice.mult > 1 ? ` ${choice.mult} times bonus!` : ''));
+  scheduleTimer(() => c.after(choice.d, choice.mult), 800);
 }
 
 function drawChoose(now) {
   const c = state.choose;
-  ctx.fillStyle = 'rgba(10, 6, 26, 0.62)';
+  ctx.fillStyle = 'rgba(10, 6, 26, 0.5)';
   ctx.fillRect(0, 0, W, H);
-  drawFittedText(c && c.locked ? 'LOCKED IN!' : '🖐 SPIN TO CHOOSE',
-    H * 0.08, H * 0.045, '#fff');
+  drawFittedText(c && c.locked ? 'LOCKED IN!' : '🖐 REACH UP TO CHOOSE',
+    H * 0.05, H * 0.033, '#fff');
 
-  const cx = W / 2;
-  const cy = H * 0.52;
-  const r = Math.min(W, H) * 0.3;
-  const seg = (2 * Math.PI) / DIFF_WHEEL.length;
-  const idx = c ? wheelIndex(c.angle) : 0;
-
-  ctx.save();
-  ctx.translate(cx, cy);
-  DIFF_WHEEL.forEach((opt, i) => {
-    const a0 = (c ? c.angle : 0) + i * seg - seg / 2 - Math.PI / 2;
-    const a1 = a0 + seg;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, r, a0, a1);
-    ctx.closePath();
-    ctx.fillStyle = opt.color;
-    ctx.globalAlpha = i === idx ? 1 : 0.5;
-    ctx.fill();
-    // label along the segment
-    const mid = a0 + seg / 2;
+  if (!c || !c.bubbles) return;
+  c.bubbles.forEach((b, i) => {
+    const frac = c.hold[i] / HOLD_TO_PICK_MS;
+    const on = c.locked && c.picked === i;
     ctx.save();
-    ctx.rotate(mid);
-    ctx.translate(r * 0.6, 0);
-    ctx.rotate(Math.PI / 2);
+    // bubble body
+    ctx.globalAlpha = on ? 1 : 0.85;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fillStyle = b.color;
+    ctx.globalAlpha = on ? 1 : 0.28 + 0.5 * frac;
+    ctx.fill();
+    // charge ring
     ctx.globalAlpha = 1;
-    ctx.fillStyle = 'rgba(0,0,0,0.8)';
-    ctx.font = `bold ${Math.round(r * 0.16)}px ${GAME_FONT}`;
+    ctx.lineWidth = Math.max(4, b.r * 0.14);
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.stroke();
+    if (frac > 0 || on) {
+      ctx.strokeStyle = b.color;
+      ctx.shadowColor = b.color;
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r, -Math.PI / 2, -Math.PI / 2 + (on ? 1 : frac) * Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // label + multiplier
+    ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(opt.emoji + ' ' + opt.label, 0, 0);
-    ctx.restore();
+    ctx.font = `bold ${Math.round(b.r * 0.42)}px ${GAME_FONT}`;
+    ctx.fillText(b.emoji, b.x, b.y - b.r * 0.18);
+    ctx.font = `bold ${Math.round(b.r * 0.3)}px ${GAME_FONT}`;
+    ctx.fillText(b.label, b.x, b.y + b.r * 0.28);
+    if (b.mult > 1) {
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${Math.round(b.r * 0.34)}px ${GAME_FONT}`;
+      ctx.fillText(`${b.mult}×`, b.x, b.y + b.r * 0.62);
+    }
   });
-  ctx.restore();
 
-  // fixed pointer at the top
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - r - H * 0.008);
-  ctx.lineTo(cx - H * 0.02, cy - r - H * 0.05);
-  ctx.lineTo(cx + H * 0.02, cy - r - H * 0.05);
-  ctx.closePath();
-  ctx.fill();
-
-  // countdown ring / hint
-  if (c && !c.locked) {
+  if (!c.locked) {
     const left = Math.max(0, c.deadline - now);
-    drawFittedText(`wave your hand in a circle · auto in ${Math.ceil(left / 1000)}s`,
-      cy + r + H * 0.04, H * 0.026, 'rgba(255,255,255,0.85)');
+    drawFittedText('Medium & Hard score BONUS points!', H * 0.86, H * 0.03, '#ffcf3f');
+    drawFittedText(`hold a hand in a bubble · auto in ${Math.ceil(left / 1000)}s`,
+      H * 0.91, H * 0.025, 'rgba(255,255,255,0.85)');
   }
 }
 
-// Decide the next pose: hand-pick wheel if enabled, else the automatic pick.
+// Decide the next pose: hand-picker if enabled, else the automatic pick.
 function nextRound() {
   if (state.handPick && Tracker.ready()) {
-    enterChoose((d) => launchRound(pickPoseOfDifficulty(d), NORMAL_SECONDS[state.round]));
+    enterChoose((d, mult) => {
+      state.roundMult = mult;
+      launchRound(pickPoseOfDifficulty(d), NORMAL_SECONDS[state.round]);
+    });
   } else {
+    state.roundMult = 1;
     launchRound(state.poses[state.round], NORMAL_SECONDS[state.round]);
   }
 }
@@ -1343,8 +1413,12 @@ function nextElimLevel() {
   const duration = Math.max(2, 4.5 - 0.3 * (state.level - 1));
   if (state.level >= 2) notice('⚠ The outline is shrinking…', 2500);
   if (state.handPick && Tracker.ready()) {
-    enterChoose((d) => launchRound(pickPoseOfDifficulty(d), duration));
+    enterChoose((d, mult) => {
+      state.roundMult = mult;
+      launchRound(pickPoseOfDifficulty(d), duration);
+    });
   } else {
+    state.roundMult = 1;
     const pool = elimPool();
     launchRound(pool[Math.floor(Math.random() * pool.length)], duration);
   }
@@ -1392,8 +1466,10 @@ function stampScore(snapCanvas, score) {
 
 // Shared by auto-scoring and the self-judge buttons. Shows the big-text
 // result on the frozen frame and auto-advances — no tapping required.
-function resolveScore(score) {
+function resolveScore(base) {
   els.resultOverlay.classList.add('hidden');
+  const mult = state.roundMult || 1;
+  const score = Math.round(base * mult); // bonus-adjusted score
   state.totalScore += score;
   els.scoreLabel.textContent = `⭐ ${state.totalScore}`;
 
@@ -1404,25 +1480,26 @@ function resolveScore(score) {
     score,
   });
 
-  const c = commentFor(score);
-  const result = { headline: `${score} pts`, color: c.color, comment: c.text, sub: '' };
+  const c = commentFor(base);
+  const bonusLine = mult > 1 ? `⚡ ${base} × ${mult} BONUS` : '';
+  const result = { headline: `${score} pts`, color: c.color, comment: c.text, sub: bonusLine };
 
   if (state.mode === 'elim') {
     state.lastSurvived = score >= state.threshold;
     if (state.lastSurvived) {
-      result.sub = `😅 SURVIVED — needed ${state.threshold}`;
+      result.sub = (bonusLine ? bonusLine + '  ·  ' : '') + `😅 SURVIVED (${state.threshold})`;
       playFanfare(true);
-      speak(`${score} points. ${c.text} Survived!`);
+      speak(`${score} points.${mult > 1 ? ' Bonus!' : ''} ${c.text} Survived!`);
     } else {
       result.comment = 'ELIMINATED!';
       result.color = '#ff5c5c';
-      result.sub = `☠️ Needed ${state.threshold} to survive`;
+      result.sub = `☠️ Got ${score}, needed ${state.threshold}`;
       sadTrombone();
       speak(`${score} points. Eliminated!`);
     }
   } else {
-    playFanfare(score >= 55);
-    speak(`${score} points. ${c.text}`);
+    playFanfare(base >= 55);
+    speak(`${score} points.${mult > 1 ? ' With bonus!' : ''} ${c.text}`);
   }
 
   state.result = result;
@@ -1647,3 +1724,101 @@ els.handpickBtn.addEventListener('click', () => {
   refreshHandPick();
 });
 refreshHandPick();
+
+// ---- Voice settings modal -------------------------------------------------
+(function voiceSettings() {
+  const $ = (id) => document.getElementById(id);
+  const modal = $('voice-modal');
+  const summary = $('voice-summary');
+  const deviceSel = $('device-voice');
+  const elevenRows = $('eleven-rows');
+  const deviceRow = $('device-voice-row');
+  const keyInput = $('eleven-key');
+  const voiceSel = $('eleven-voice');
+  const status = $('eleven-status');
+
+  function populateDeviceVoices() {
+    if (!('speechSynthesis' in window)) return;
+    const voices = speechSynthesis.getVoices().filter((v) => v.lang.startsWith('en'));
+    deviceSel.innerHTML = '';
+    voices.forEach((v) => {
+      const o = document.createElement('option');
+      o.value = v.voiceURI;
+      o.textContent = `${v.name} (${v.lang})`;
+      if (v.voiceURI === voice.deviceVoiceURI) o.selected = true;
+      deviceSel.appendChild(o);
+    });
+  }
+  if ('speechSynthesis' in window) {
+    populateDeviceVoices();
+    speechSynthesis.onvoiceschanged = populateDeviceVoices;
+  }
+
+  function refreshProvider() {
+    $('voice-provider').querySelectorAll('button').forEach((b) =>
+      b.classList.toggle('active', b.dataset.provider === voice.provider));
+    elevenRows.classList.toggle('hidden', voice.provider !== 'eleven');
+    deviceRow.classList.toggle('hidden', voice.provider === 'eleven');
+    summary.textContent = voice.provider === 'eleven'
+      ? (voice.elevenVoiceId ? 'ElevenLabs voice' : 'ElevenLabs (needs key)')
+      : 'Device voice';
+  }
+
+  keyInput.value = voice.elevenKey;
+
+  async function connectEleven() {
+    voice.elevenKey = keyInput.value.trim();
+    try { localStorage.setItem('orElevenKey', voice.elevenKey); } catch (e) {}
+    if (!voice.elevenKey) { status.textContent = 'Enter your API key first.'; return; }
+    status.textContent = 'Connecting…';
+    try {
+      const res = await fetch('https://api.elevenlabs.io/v1/voices',
+        { headers: { 'xi-api-key': voice.elevenKey } });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      voiceSel.innerHTML = '';
+      (data.voices || []).forEach((v) => {
+        const o = document.createElement('option');
+        o.value = v.voice_id;
+        o.textContent = v.name;
+        if (v.voice_id === voice.elevenVoiceId) o.selected = true;
+        voiceSel.appendChild(o);
+      });
+      voiceSel.classList.remove('hidden');
+      if (!voice.elevenVoiceId && data.voices && data.voices[0]) {
+        voice.elevenVoiceId = data.voices[0].voice_id;
+      }
+      try { localStorage.setItem('orElevenVoice', voice.elevenVoiceId); } catch (e) {}
+      status.textContent = `Connected — ${data.voices ? data.voices.length : 0} voices.`;
+      refreshProvider();
+    } catch (e) {
+      status.textContent = 'Could not connect. Check the key (and that your plan allows browser use).';
+    }
+  }
+
+  $('voice-btn').addEventListener('click', () => {
+    refreshProvider();
+    modal.classList.remove('hidden');
+  });
+  $('voice-provider').querySelectorAll('button').forEach((b) => {
+    b.addEventListener('click', () => {
+      voice.provider = b.dataset.provider;
+      try { localStorage.setItem('orVoiceProvider', voice.provider); } catch (e) {}
+      refreshProvider();
+    });
+  });
+  deviceSel.addEventListener('change', () => {
+    voice.deviceVoiceURI = deviceSel.value;
+    try { localStorage.setItem('orDeviceVoice', voice.deviceVoiceURI); } catch (e) {}
+  });
+  voiceSel.addEventListener('change', () => {
+    voice.elevenVoiceId = voiceSel.value;
+    try { localStorage.setItem('orElevenVoice', voice.elevenVoiceId); } catch (e) {}
+    refreshProvider();
+  });
+  $('eleven-connect').addEventListener('click', connectEleven);
+  $('voice-test').addEventListener('click', () => speak('Star Jump! Arms up and out, legs wide!'));
+  $('voice-done').addEventListener('click', () => modal.classList.add('hidden'));
+
+  refreshProvider();
+})();

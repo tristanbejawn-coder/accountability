@@ -287,6 +287,54 @@ body {
     0 8px 14px rgba(0, 0, 0, 0.35);
 }
 
+.voice-card {
+  gap: 0.9rem;
+  width: min(92vw, 24rem);
+  align-items: stretch;
+}
+
+.voice-card .mode-toggle button { font-size: 1rem; }
+
+.voice-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.voice-eleven {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.voice-card label {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.82rem;
+  opacity: 0.85;
+}
+
+.key-note { opacity: 0.55; font-size: 0.72rem; }
+
+.voice-card select,
+.voice-card input {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.95rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(10, 6, 28, 0.6);
+  color: #fff;
+  flex: 1;
+  min-width: 0;
+}
+
+.voice-status {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 0.78rem;
+  min-height: 1em;
+  opacity: 0.85;
+}
+
 .error {
   color: #ff7b7b;
   font-family: 'Segoe UI', system-ui, sans-serif;
