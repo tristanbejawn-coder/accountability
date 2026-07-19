@@ -4,7 +4,16 @@
 // rounds, and a rollercoaster-style photo wall at the end.
 
 const NORMAL_ROUNDS = 5;
-const NORMAL_SECONDS = [6, 5, 5, 4, 4];
+const NORMAL_SECONDS = [7, 6, 5, 4, 3];
+// Dramatic difficulty ramp across the 5 warm-up rounds: each round pulls from
+// a tier of the library, escalating easy → one-leg balance → extreme.
+const NORMAL_RAMP = [
+  { min: 1, max: 1, extreme: false }, // gentle opener
+  { min: 2, max: 2, extreme: false }, // real pose, both feet
+  { min: 2, max: 3, extreme: false }, // getting spicy
+  { min: 3, max: 3, extreme: false }, // hard balance
+  { min: 3, max: 3, extreme: true },  // extreme finale
+];
 const GET_READY_MS = 3400; // long enough for a clean 3·2·1 countdown
 const RESULT_MS = 4000;
 const SCAN_HOLD_MS = 1400;
@@ -720,9 +729,16 @@ function computeScore(personMaskCanvas) {
     if (t && p) both++;
   }
   if (!pCount || !tCount) return 0;
-  const coverage = both / tCount;
-  const precision = both / pCount;
-  return Math.round(100 * Math.min(1, 0.65 * coverage + 0.35 * precision));
+  const coverage = both / tCount;   // recall: how much of the outline you filled
+  const precision = both / pCount;  // how much of you stayed inside the outline
+  // F-beta overlap with beta < 1 leans on precision, so spilling outside the
+  // shape (the "just be a big blob" exploit) is punished harder than a small
+  // miss. Only genuinely matching the outline scores high.
+  const b2 = 0.49; // beta = 0.7
+  const denom = b2 * precision + coverage;
+  const fb = denom ? ((1 + b2) * precision * coverage) / denom : 0;
+  // Gentle curve keeps good-but-imperfect fits rewarding without cheapening 100.
+  return Math.round(100 * Math.min(1, Math.pow(fb, 0.8)));
 }
 
 // ---------------------------------------------------------------------------
@@ -977,8 +993,18 @@ function skipScan() {
 
 function beginRounds() {
   state.mode = 'normal';
-  state.poses = shuffled(POSES.filter((p) => p.difficulty <= 2 && !p.extreme))
-    .slice(0, NORMAL_ROUNDS);
+  const used = new Set();
+  state.poses = NORMAL_RAMP.map((tier) => {
+    let pool = POSES.filter((p) =>
+      p.difficulty >= tier.min && p.difficulty <= tier.max &&
+      (tier.extreme || !p.extreme) && !used.has(p));
+    if (!pool.length) {
+      pool = POSES.filter((p) => (tier.extreme || !p.extreme) && !used.has(p));
+    }
+    const pose = shuffled(pool)[0];
+    used.add(pose);
+    return pose;
+  });
   state.round = 0;
   state.level = 1;
   state.totalScore = 0;

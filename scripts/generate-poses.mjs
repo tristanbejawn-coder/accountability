@@ -23,6 +23,7 @@ function mulberry32(seed) {
   };
 }
 
+const TOTAL = 120; // 11 classics + 20 yoga + 89 procedural
 const rnd = mulberry32(20260717);
 const R = (a, b) => a + rnd() * (b - a);
 const RI = (a, b) => Math.round(R(a, b));
@@ -53,6 +54,53 @@ const CLASSICS = [
     arms: { L: [90, 90], R: [90, 90] }, legs: { L: [-14, -16], R: [-24, -26] }, lean: 7 },
   { name: 'Leaning Tower', emoji: '🗼', tip: 'Arms up, tilt over… don\'t topple!', difficulty: 3,
     arms: { L: [168, 170], R: [168, 170] }, legs: { L: [2, 2], R: [2, 2] }, lean: 14 },
+];
+
+// --- Yoga poses (hand-modelled, front-facing silhouette approximations) -----
+// Real asanas adapted to a front-on 2D outline. Angles per skeleton.js:
+// arms/legs are [proximal, distal] joint angles, 0 = down, 90 = out, 180 = up,
+// negative/>180 = crossing inward; `lean` tilts the upper body.
+const YOGA = [
+  { name: 'Mountain Pose', emoji: '🧘', tip: 'Stand tall, feet together, arms at your sides — breathe.', difficulty: 1,
+    arms: { L: [8, 6], R: [8, 6] }, legs: { L: [3, 3], R: [3, 3] } },
+  { name: 'Upward Salute', emoji: '🙆', tip: 'Feet together, sweep both arms high overhead!', difficulty: 1,
+    arms: { L: [172, 174], R: [172, 174] }, legs: { L: [3, 3], R: [3, 3] } },
+  { name: 'Five-Pointed Star', emoji: '⭐', tip: 'Legs wide, arms wide — be a big star!', difficulty: 1,
+    arms: { L: [118, 120], R: [118, 120] }, legs: { L: [22, 24], R: [22, 24] } },
+  { name: 'Chair Pose', emoji: '🪑', tip: 'Sit back into a chair, arms reaching up!', difficulty: 2,
+    arms: { L: [165, 168], R: [165, 168] }, legs: { L: [40, -14], R: [40, -14] } },
+  { name: 'Goddess Pose', emoji: '👑', tip: 'Wide squat, bend your arms like a cactus!', difficulty: 2,
+    arms: { L: [95, 168], R: [95, 168] }, legs: { L: [52, -24], R: [52, -24] } },
+  { name: 'Garland Squat', emoji: '🙏', tip: 'Squat down deep, palms together at your heart.', difficulty: 2,
+    arms: { L: [40, -30], R: [40, -30] }, legs: { L: [56, -36], R: [56, -36] } },
+  { name: 'Crescent Lunge', emoji: '🌙', tip: 'Deep lunge, both arms reaching for the sky!', difficulty: 2,
+    arms: { L: [170, 172], R: [170, 172] }, legs: { L: [46, -24], R: [8, 8] } },
+  { name: 'Warrior One', emoji: '🛡️', tip: 'Lunge forward, sweep both arms overhead!', difficulty: 2,
+    arms: { L: [166, 170], R: [166, 170] }, legs: { L: [34, -16], R: [10, 10] } },
+  { name: 'Warrior Two', emoji: '⚔️', tip: 'Wide stance, bend the front knee, arms straight out!', difficulty: 2,
+    arms: { L: [90, 90], R: [90, 90] }, legs: { L: [42, -18], R: [18, 16] } },
+  { name: 'Tree Pose', emoji: '🌳', tip: 'Foot to your inner thigh, palms together up high!', difficulty: 3,
+    arms: { L: [178, 180], R: [178, 180] }, legs: { L: [3, 3], R: [58, -74] } },
+  { name: 'Eagle Pose', emoji: '🦅', tip: 'Wrap your arms, cross your legs, sink down!', difficulty: 3,
+    arms: { L: [74, 120], R: [70, 108] }, legs: { L: [-16, -14], R: [-30, -26] } },
+  { name: 'Triangle Pose', emoji: '📐', tip: 'Wide legs, tip sideways — one arm up, one down!', difficulty: 3,
+    arms: { L: [22, 18], R: [166, 170] }, legs: { L: [20, 22], R: [18, 20] }, lean: 20 },
+  { name: 'Extended Side Angle', emoji: '🔺', tip: 'Wide lunge, top arm reaching over your head!', difficulty: 3,
+    arms: { L: [30, 22], R: [150, 160] }, legs: { L: [44, -20], R: [18, 16] }, lean: 22 },
+  { name: 'Half Moon', emoji: '🌗', tip: 'Balance on one leg, top leg out, reach up and down!', difficulty: 3,
+    arms: { L: [10, 8], R: [172, 174] }, legs: { L: [3, 3], R: [92, 88] }, lean: 12 },
+  { name: 'Dancer Pose', emoji: '💃', tip: 'Lift your back foot, reach the other arm forward!', difficulty: 3,
+    arms: { L: [150, 156], R: [64, 40] }, legs: { L: [3, 3], R: [46, 150] }, lean: 10 },
+  { name: 'Airplane Balance', emoji: '✈️', tip: 'Balance on one leg, other leg back, arms like wings!', difficulty: 3,
+    arms: { L: [88, 88], R: [88, 88] }, legs: { L: [3, 3], R: [84, 74] }, lean: 8 },
+  { name: 'Standing Splits', emoji: '🤸', tip: 'One leg sky-high, reach down for the floor!', difficulty: 3,
+    arms: { L: [16, 10], R: [16, 10] }, legs: { L: [3, 3], R: [124, 116] } },
+  { name: 'Figure-Four Chair', emoji: '🕊️', tip: 'Cross one ankle over your knee and sit down!', difficulty: 3,
+    arms: { L: [40, -28], R: [40, -28] }, legs: { L: [26, -12], R: [54, -104] } },
+  { name: 'Standing Hand-to-Toe', emoji: '🦶', tip: 'Stand on one leg, extend the other straight out!', difficulty: 3,
+    arms: { L: [90, 90], R: [50, -30] }, legs: { L: [3, 3], R: [94, 90] } },
+  { name: 'Warrior Three', emoji: '🕴️', tip: 'Tip forward on one leg, arms and back leg reaching!', difficulty: 3,
+    arms: { L: [128, 130], R: [128, 130] }, legs: { L: [3, 3], R: [70, 66] }, lean: 20 },
 ];
 
 // --- Archetypes -------------------------------------------------------------
@@ -124,7 +172,7 @@ const NOUNS = [
 // --- Generation -------------------------------------------------------------
 
 const mirror = (side) => ({ L: side.R, R: side.L });
-const usedNames = new Set(CLASSICS.map((p) => p.name));
+const usedNames = new Set([...CLASSICS, ...YOGA].map((p) => p.name));
 const usedSignatures = new Set();
 
 function signature(pose) {
@@ -208,8 +256,8 @@ for (const { n, gen } of LEGS) {
   }
 }
 
-const all = [...CLASSICS, ...generated];
-if (all.length !== 100) throw new Error(`expected 100 poses, got ${all.length}`);
+const all = [...CLASSICS, ...YOGA, ...generated];
+if (all.length !== TOTAL) throw new Error(`expected ${TOTAL} poses, got ${all.length}`);
 
 const counts = { 1: 0, 2: 0, 3: 0 };
 let raised = 0;
@@ -222,7 +270,7 @@ for (const p of all) {
   if (p.extreme) extreme++;
   if (p.air) air++;
 }
-console.log(`100 poses: difficulty 1/2/3 = ${counts[1]}/${counts[2]}/${counts[3]}, ` +
+console.log(`${TOTAL} poses: difficulty 1/2/3 = ${counts[1]}/${counts[2]}/${counts[3]}, ` +
   `legs-off-ground = ${raised}, extreme = ${extreme}, airborne = ${air}`);
 
 // --- Emit -------------------------------------------------------------------

@@ -31,17 +31,20 @@ Think *Hole in the Wall*, but the wall is a wobbly TikTok-style doodle.
    timing on the start screen: **😌 Easy** parks the wall at your plane early
    and waits so you can settle, while **😰 Hard** slams it in at the exact
    instant of the snap.
-5. **5 warm-up rounds** of easier poses with a shrinking timer, then…
+5. **5 warm-up rounds** with a dramatic difficulty ramp — round 1 is a gentle
+   both-feet pose and each round climbs a tier (easy → real pose → one-leg
+   balance → hard → an extreme finale) while the timer shrinks 7s → 3s. Then…
 6. **☠️ ELIMINATION TIME**: one pose per level, and you must beat a target
    score to survive. Each level the target rises (45 → 80), the timer shrinks
    (4.5s → 2s), the pose pool gets harder, and the outline itself slowly
    *shrinks*. Survive as many levels as you can — your final rank goes from
    🧱 First-Round Faller to 🏆 Balance Deity.
 
-   The game draws from a **library of 100 poses** (`js/poses-library.js`):
-   11 hand-made classics plus 89 procedurally generated ones — yoga-style
-   one-leg balances (tree tucks, high knees), warrior lunges, frog crouches,
-   goddess squats, crossed tightropes, leans, and every arm shape from
+   The game draws from a **library of 120 poses** (`js/poses-library.js`):
+   11 hand-made classics, **20 real yoga poses** (Tree, Warrior I/II/III,
+   Triangle, Half Moon, Dancer, Eagle, Chair, Goddess, Standing Splits…),
+   and 89 procedurally generated ones — one-leg balances, warrior lunges,
+   frog crouches, crossed tightropes, leans, and every arm shape from
    overhead crosses to prayer hands — each with a generated name like
    *The Haunted Sasquatch* or *The Feral Windmill*. No pose repeats within
    a game.
@@ -82,10 +85,14 @@ One in-browser model does everything:
   re-anchoring outlines between rounds
 - **a person segmentation mask** — used at the buzzer to score your fit:
 
-  - **coverage** — how much of the outline you filled
+  - **coverage** (recall) — how much of the outline you filled
   - **precision** — how much of you stayed inside the outline
 
-  `score = 100 × (0.65 × coverage + 0.35 × precision)`
+  These are combined with an **F-beta overlap score** (β = 0.7, precision-
+  leaning) so that spilling outside the shape — the "just stand close and be
+  a big blob" exploit — is punished harder than a small miss. A gentle curve
+  keeps good-but-imperfect fits rewarding. A perfect fit is 100; a shapeless
+  blob covering the whole outline only scores ~60.
 
 Poses are defined as limb *angles*; forward kinematics in `js/skeleton.js`
 combines them with your measured segment lengths to build the silhouette,
