@@ -49,7 +49,7 @@ for (const id of [
   'start-btn', 'again-btn', 'rescan-btn', 'skip-scan',
   'judge-buttons', 'hud', 'round-label', 'pose-label', 'score-label',
   'snapshot-img', 'final-score', 'final-rank', 'start-error',
-  'gallery', 'strip-btn', 'mode-toggle',
+  'gallery', 'strip-btn', 'mode-toggle', 'handpick-btn',
   'pause-btn', 'pause-overlay', 'resume-btn', 'restart-btn', 'menu-btn',
 ]) {
   els[id.replace(/-([a-z])/g, (m, c) => c.toUpperCase())] = document.getElementById(id);
@@ -63,6 +63,8 @@ const state = {
   threshold: 0,
   roundDuration: 6,
   hardMode: false, // easy: wall arrives early & waits; hard: arrives at zero
+  handPick: false, // spin-the-wheel difficulty picker between rounds
+  choose: null,    // wheel state during the 'choose' phase
   pivot: null,     // canvas-space vanishing point the outline grows from
   lastSurvived: true,
   poses: [],
@@ -841,6 +843,10 @@ function render(now) {
       }
       break;
     }
+    case 'choose':
+      updateChoose(now);
+      drawChoose(now);
+      break;
     case 'paused':
       ctx.fillStyle = 'rgba(10, 6, 26, 0.55)';
       ctx.fillRect(0, 0, W, H);
@@ -918,7 +924,7 @@ function setPhase(p) {
   state.phase = p;
   els.skipScan.classList.toggle('hidden', p !== 'scan');
   els.hud.classList.toggle('hidden',
-    ['loading', 'scan', 'calibrated', 'elim-intro', 'paused'].includes(p));
+    ['loading', 'scan', 'calibrated', 'elim-intro', 'choose', 'paused'].includes(p));
   // Pause button available only while a round is actively running.
   els.pauseBtn.classList.toggle('hidden', !['getready', 'posing'].includes(p));
 }
@@ -1125,8 +1131,182 @@ function quitToMenu() {
   showScreen('start');
 }
 
+// ---- Hand-controlled difficulty wheel ------------------------------------
+
+const DIFF_WHEEL = [
+  { d: 1, label: 'EASY', emoji: '😌', color: '#5eea6a' },
+  { d: 2, label: 'MEDIUM', emoji: '😐', color: '#ffcf3f' },
+  { d: 3, label: 'HARD', emoji: '🔥', color: '#ff4d8d' },
+];
+const CHOOSE_TIMEOUT_MS = 7000; // auto-pick if the player doesn't spin
+
+// Pick an unused pose of the chosen difficulty (falls back gracefully).
+function pickPoseOfDifficulty(d) {
+  const allowExtreme = d >= 3;
+  let pool = POSES.filter((p) =>
+    p.difficulty === d && (allowExtreme || !p.extreme) &&
+    p !== state.currentPose && !state.usedPoses.has(p));
+  if (!pool.length) {
+    pool = POSES.filter((p) => p.difficulty === d && p !== state.currentPose);
+  }
+  if (!pool.length) pool = POSES.filter((p) => p !== state.currentPose);
+  return shuffled(pool)[0];
+}
+
+// Enter the wheel. `after` launches the round once a difficulty is locked.
+function enterChoose(after) {
+  state.choose = {
+    angle: 0, vel: 0, lastAngle: null, lastAt: 0,
+    slowSince: 0, locked: false, after,
+    deadline: performance.now() + CHOOSE_TIMEOUT_MS,
+  };
+  setPhase('choose');
+  speak('Spin your hand to pick your difficulty!');
+}
+
+// Which wheel segment sits under the fixed pointer (top of the wheel).
+function wheelIndex(angle) {
+  const seg = (2 * Math.PI) / DIFF_WHEEL.length;
+  // pointer is at the top; segment 0 centred there at angle 0
+  let a = (-angle + seg / 2) % (2 * Math.PI);
+  if (a < 0) a += 2 * Math.PI;
+  return Math.floor(a / seg) % DIFF_WHEEL.length;
+}
+
+function updateChoose(now) {
+  const c = state.choose;
+  if (!c || c.locked) return;
+  if (now - (c.lastDetectAt || 0) > 55) {
+    c.lastDetectAt = now;
+    c.det = Tracker.detect(video);
+  }
+  const lms = c.det && c.det.landmarks;
+
+  // Track the higher (raised) visible wrist, angle around the chest.
+  let driven = false;
+  if (lms) {
+    const cx = ((lms[LM.SHOULDER_L].x + lms[LM.SHOULDER_R].x) / 2);
+    const cy = ((lms[LM.SHOULDER_L].y + lms[LM.SHOULDER_R].y) / 2);
+    const cands = [LM.WRIST_L, LM.WRIST_R]
+      .filter((i) => (lms[i].visibility ?? 1) > 0.5)
+      .map((i) => ({ i, y: lms[i].y }));
+    if (cands.length) {
+      const wrist = cands.sort((a, b) => a.y - b.y)[0];
+      const w = lms[wrist.i];
+      const ang = Math.atan2(w.y - cy, w.x - cx);
+      if (c.lastAngle !== null) {
+        let d = ang - c.lastAngle;
+        while (d > Math.PI) d -= 2 * Math.PI;
+        while (d < -Math.PI) d += 2 * Math.PI;
+        const dt = Math.max(1, now - c.lastAt);
+        // Mirror correction: on-screen the video is flipped, so invert.
+        const inst = -d / dt * 1000; // rad/s
+        if (Math.abs(inst) > 0.4) {
+          c.vel = c.vel * 0.5 + inst * 0.5;
+          driven = true;
+        }
+      }
+      c.lastAngle = ang;
+      c.lastAt = now;
+    }
+  }
+
+  // Integrate + friction.
+  const dt = 1 / 60;
+  c.angle += c.vel * dt;
+  c.vel *= 0.94;
+
+  // Lock when it has been spun and then settles for ~0.7s.
+  const spinning = Math.abs(c.vel) > 0.35;
+  if (spinning) {
+    c.slowSince = 0;
+    c.everSpun = true;
+  } else if (c.everSpun) {
+    if (!c.slowSince) c.slowSince = now;
+    if (now - c.slowSince > 700) lockChoice(now);
+  }
+  if (!c.locked && now >= c.deadline) lockChoice(now);
+}
+
+function lockChoice(now) {
+  const c = state.choose;
+  if (!c || c.locked) return;
+  c.locked = true;
+  // Snap the wheel to the nearest segment centre.
+  const idx = wheelIndex(c.angle);
+  const seg = (2 * Math.PI) / DIFF_WHEEL.length;
+  c.angle = -idx * seg;
+  const choice = DIFF_WHEEL[idx];
+  playLockChirp();
+  speak(`${choice.label}!`);
+  scheduleTimer(() => c.after(choice.d), 800);
+}
+
+function drawChoose(now) {
+  const c = state.choose;
+  ctx.fillStyle = 'rgba(10, 6, 26, 0.62)';
+  ctx.fillRect(0, 0, W, H);
+  drawFittedText(c && c.locked ? 'LOCKED IN!' : '🖐 SPIN TO CHOOSE',
+    H * 0.08, H * 0.045, '#fff');
+
+  const cx = W / 2;
+  const cy = H * 0.52;
+  const r = Math.min(W, H) * 0.3;
+  const seg = (2 * Math.PI) / DIFF_WHEEL.length;
+  const idx = c ? wheelIndex(c.angle) : 0;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  DIFF_WHEEL.forEach((opt, i) => {
+    const a0 = (c ? c.angle : 0) + i * seg - seg / 2 - Math.PI / 2;
+    const a1 = a0 + seg;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, r, a0, a1);
+    ctx.closePath();
+    ctx.fillStyle = opt.color;
+    ctx.globalAlpha = i === idx ? 1 : 0.5;
+    ctx.fill();
+    // label along the segment
+    const mid = a0 + seg / 2;
+    ctx.save();
+    ctx.rotate(mid);
+    ctx.translate(r * 0.6, 0);
+    ctx.rotate(Math.PI / 2);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.font = `bold ${Math.round(r * 0.16)}px ${GAME_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(opt.emoji + ' ' + opt.label, 0, 0);
+    ctx.restore();
+  });
+  ctx.restore();
+
+  // fixed pointer at the top
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r - H * 0.008);
+  ctx.lineTo(cx - H * 0.02, cy - r - H * 0.05);
+  ctx.lineTo(cx + H * 0.02, cy - r - H * 0.05);
+  ctx.closePath();
+  ctx.fill();
+
+  // countdown ring / hint
+  if (c && !c.locked) {
+    const left = Math.max(0, c.deadline - now);
+    drawFittedText(`wave your hand in a circle · auto in ${Math.ceil(left / 1000)}s`,
+      cy + r + H * 0.04, H * 0.026, 'rgba(255,255,255,0.85)');
+  }
+}
+
+// Decide the next pose: hand-pick wheel if enabled, else the automatic pick.
 function nextRound() {
-  launchRound(state.poses[state.round], NORMAL_SECONDS[state.round]);
+  if (state.handPick && Tracker.ready()) {
+    enterChoose((d) => launchRound(pickPoseOfDifficulty(d), NORMAL_SECONDS[state.round]));
+  } else {
+    launchRound(state.poses[state.round], NORMAL_SECONDS[state.round]);
+  }
 }
 
 function startElimination() {
@@ -1161,10 +1341,13 @@ function elimPool() {
 function nextElimLevel() {
   state.threshold = Math.min(80, 40 + 5 * state.level);
   const duration = Math.max(2, 4.5 - 0.3 * (state.level - 1));
-  const pool = elimPool();
-  const pose = pool[Math.floor(Math.random() * pool.length)];
   if (state.level >= 2) notice('⚠ The outline is shrinking…', 2500);
-  launchRound(pose, duration);
+  if (state.handPick && Tracker.ready()) {
+    enterChoose((d) => launchRound(pickPoseOfDifficulty(d), duration));
+  } else {
+    const pool = elimPool();
+    launchRound(pool[Math.floor(Math.random() * pool.length)], duration);
+  }
 }
 
 async function captureAndScore() {
@@ -1450,3 +1633,17 @@ els.modeToggle.querySelectorAll('button').forEach((btn) => {
   });
 });
 refreshModeToggle();
+
+// "Pick poses by hand" toggle.
+try {
+  state.handPick = localStorage.getItem('outlineRushHandPick') === '1';
+} catch (e) {}
+function refreshHandPick() {
+  els.handpickBtn.setAttribute('aria-pressed', state.handPick ? 'true' : 'false');
+}
+els.handpickBtn.addEventListener('click', () => {
+  state.handPick = !state.handPick;
+  try { localStorage.setItem('outlineRushHandPick', state.handPick ? '1' : '0'); } catch (e) {}
+  refreshHandPick();
+});
+refreshHandPick();

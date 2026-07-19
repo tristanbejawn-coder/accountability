@@ -67,6 +67,13 @@ Think *Hole in the Wall*, but the wall is a wobbly TikTok-style doodle.
    it, or hit *Save photo strip* to download all of them composed into one
    shareable image.
 
+**🖐 Pick poses by hand** (optional, toggle on the home screen): before each
+round a difficulty wheel appears — wave your hand in a circle to spin it
+through Easy / Medium / Hard, stop and it settles, and the next pose is drawn
+from the difficulty you landed on. If you don't spin within a few seconds it
+auto-picks, so the hands-free flow still works. Uses the same pose-landmark
+tracking as the scan (tracks your raised wrist's angle around your chest).
+
 The countdown has a tense soundtrack: accelerating tick-tock, heartbeat, and
 a rising panic whine, synthesized in WebAudio (plus a sad trombone when
 you're eliminated). Want the actual trend sound instead? Drop an audio file
