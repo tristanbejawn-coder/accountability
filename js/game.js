@@ -5,7 +5,7 @@
 
 const NORMAL_ROUNDS = 5;
 const NORMAL_SECONDS = [6, 5, 5, 4, 4];
-const GET_READY_MS = 2600;
+const GET_READY_MS = 3400; // long enough for a clean 3·2·1 countdown
 const RESULT_MS = 4000;
 const SCAN_HOLD_MS = 1400;
 const SCAN_COLOR = '#59f7ff';
@@ -41,6 +41,7 @@ for (const id of [
   'judge-buttons', 'hud', 'round-label', 'pose-label', 'score-label',
   'snapshot-img', 'final-score', 'final-rank', 'start-error',
   'gallery', 'strip-btn', 'mode-toggle',
+  'pause-btn', 'pause-overlay', 'resume-btn', 'restart-btn', 'menu-btn',
 ]) {
   els[id.replace(/-([a-z])/g, (m, c) => c.toUpperCase())] = document.getElementById(id);
 }
@@ -61,8 +62,12 @@ const state = {
   currentPose: null,
   ringFrames: [],
   farRingFrames: [],
-  landingRing: null,
+  floorMark: null, // {x, y, rx, ry} "stand here" ring on the ground
   fillFrame: null,
+  getReadyUntil: 0,
+  readyTick: -1,
+  pendingTimers: [],
+  pauseInfo: null,
   targetMask: null,
   lastSnap: null,
   snapshotUrl: null,
@@ -343,9 +348,16 @@ function prepareRoundArt(pose, sizeScale = 1) {
   // Thicker ring for when the wall is far away and scaled small on screen.
   state.farRingFrames = [0, 1, 2].map(() =>
     buildRingCanvas(silhouetteCanvas(calib, pose, 0.012), Math.max(9, H * 0.02), '#fff'));
-  // Gold landing-zone ghost marking where the wall will arrive.
-  state.landingRing = buildRingCanvas(state.targetMask, thickness, '#ffcf3f');
   state.fillFrame = tintCanvas(state.targetMask, 'rgba(255, 255, 255, 0.18)');
+  // "Stand here" floor ring at the player's feet plane.
+  const foot = Math.max(...['ankleL', 'ankleR'].map((k) =>
+    buildJoints(calib, pose, 0)[k].y));
+  state.floorMark = {
+    x: calib.anchorX,
+    y: Math.min(foot + calib.personH * 0.03, H - H * 0.02),
+    rx: calib.shoulderHalf * 2.6,
+    ry: calib.shoulderHalf * 0.9,
+  };
   // Vanishing point the "wall" grows from — roughly the body's centre,
   // lifted for airborne poses so they scale about the floating figure.
   const airOff = (pose.air || 0) * calib.personH;
@@ -387,14 +399,6 @@ function drawApproachingOutline(now, s) {
   const f = Math.max(0, Math.min(1, (s - WALL_POINT_SCALE) / (1 - WALL_POINT_SCALE)));
   const near = Math.max(0, Math.min(1, (s - WALL_READABLE) / (1 - WALL_READABLE)));
   const frame = Math.floor(now / 160) % 3;
-
-  // Landing zone: where the wall will end up, fading out as it arrives.
-  if (state.landingRing) {
-    ctx.save();
-    ctx.globalAlpha = 0.4 * (1 - near);
-    ctx.drawImage(state.landingRing, 0, 0);
-    ctx.restore();
-  }
 
   // The point in the distance the wall emerges from.
   if (f < 0.5) {
@@ -725,6 +729,37 @@ function computeScore(personMaskCanvas) {
 // Render loop
 // ---------------------------------------------------------------------------
 
+// Glowing "stand here" ring on the ground, so the player positions their feet
+// where the outline will land. `label` shows STAND HERE (get-ready only).
+function drawFloorMark(now, label) {
+  const m = state.floorMark;
+  if (!m) return;
+  const pulse = 0.65 + 0.35 * Math.sin(now / 320);
+  ctx.save();
+  ctx.translate(m.x, m.y);
+  // soft glow disc
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, m.rx);
+  g.addColorStop(0, `rgba(89, 247, 255, ${0.22 * pulse})`);
+  g.addColorStop(1, 'rgba(89, 247, 255, 0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, m.rx, m.ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // ring
+  ctx.lineWidth = Math.max(3, H * 0.006);
+  ctx.strokeStyle = `rgba(120, 236, 255, ${0.85 * pulse})`;
+  ctx.shadowColor = 'rgba(89, 247, 255, 0.9)';
+  ctx.shadowBlur = H * 0.02;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, m.rx, m.ry, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // little foot arrows pointing in
+  ctx.restore();
+  if (label) {
+    drawFittedText('STAND HERE', m.y - m.ry - H * 0.05, H * 0.028, '#59f7ff');
+  }
+}
+
 function render(now) {
   ctx.clearRect(0, 0, W, H);
   if (video.readyState >= 2) drawVideoFrame(ctx);
@@ -749,33 +784,51 @@ function render(now) {
       drawFittedText(`It only gets harder from here… ☠️`, H * 0.26 + fs * 1.6, fs, '#fff');
       break;
     }
-    case 'getready':
-    case 'posing': {
-      if (state.phase === 'getready') {
-        // The wall is still far off in the distance while we announce the pose.
-        drawApproachingOutline(now, wallScale(0));
-        drawBigText(state.currentPose.name.toUpperCase(),
-          state.mode === 'elim' ? '#ff5c5c' : '#ffe14d');
-        drawFittedText(state.currentPose.tip,
-          H * 0.06 + Math.min(H * 0.15, W * 0.18) * 1.1, H * 0.04, '#fff');
-      } else {
-        const remaining = Math.max(0, state.deadline - now);
-        const dur = state.roundDuration * 1000;
-        const s = wallScale((dur - remaining) / dur);
-        drawApproachingOutline(now, s);
-        const secs = Math.ceil(remaining / 1000);
-        drawBigText(String(secs), remaining < 1500 ? '#ff5c5c' : '#ffffff');
-        if (state.mode === 'elim') {
-          drawFittedText(`☠️ BEAT ${state.threshold}`,
-            H * 0.06 + H * 0.155, H * 0.034, '#ff9db5');
-        }
-        if (remaining <= 0) {
-          setPhase('scoring');
-          captureAndScore();
-        }
+    case 'getready': {
+      drawFloorMark(now, true);
+      // Pose name up top, giant 3·2·1 counting into the round.
+      drawBigText(state.currentPose.name.toUpperCase(),
+        state.mode === 'elim' ? '#ff5c5c' : '#ffe14d');
+      drawFittedText(state.currentPose.tip,
+        H * 0.06 + Math.min(H * 0.15, W * 0.18) * 1.1, H * 0.038, '#fff');
+      const rem = Math.max(0, state.getReadyUntil - now);
+      const n = Math.ceil(rem / 1000);
+      if (n !== state.readyTick) {
+        state.readyTick = n;
+        if (n >= 1) beep(560 + (3 - Math.min(n, 3)) * 120, 0.12, 'sine', 0.09);
+      }
+      if (n >= 1) {
+        const pop = 1 - (rem % 1000) / 1000; // 0→1 within each second
+        const fs = Math.min(H * 0.34, W * 0.5) * (0.75 + 0.25 * pop);
+        ctx.save();
+        ctx.globalAlpha = 0.5 + 0.5 * (1 - pop);
+        drawFittedText(String(n), H * 0.42, fs, '#ffffff');
+        ctx.restore();
       }
       break;
     }
+    case 'posing': {
+      const remaining = Math.max(0, state.deadline - now);
+      const dur = state.roundDuration * 1000;
+      const s = wallScale((dur - remaining) / dur);
+      drawFloorMark(now, false);
+      drawApproachingOutline(now, s);
+      const secs = Math.ceil(remaining / 1000);
+      drawBigText(String(secs), remaining < 1500 ? '#ff5c5c' : '#ffffff');
+      if (state.mode === 'elim') {
+        drawFittedText(`☠️ BEAT ${state.threshold}`,
+          H * 0.06 + H * 0.155, H * 0.034, '#ff9db5');
+      }
+      if (remaining <= 0) {
+        setPhase('scoring');
+        captureAndScore();
+      }
+      break;
+    }
+    case 'paused':
+      ctx.fillStyle = 'rgba(10, 6, 26, 0.55)';
+      ctx.fillRect(0, 0, W, H);
+      break;
     case 'scoring':
       drawBigText('📸', '#ffffff');
       break;
@@ -849,7 +902,9 @@ function setPhase(p) {
   state.phase = p;
   els.skipScan.classList.toggle('hidden', p !== 'scan');
   els.hud.classList.toggle('hidden',
-    ['loading', 'scan', 'calibrated', 'elim-intro'].includes(p));
+    ['loading', 'scan', 'calibrated', 'elim-intro', 'paused'].includes(p));
+  // Pause button available only while a round is actively running.
+  els.pauseBtn.classList.toggle('hidden', !['getready', 'posing'].includes(p));
 }
 
 function notice(text, ms = 4000) {
@@ -949,7 +1004,29 @@ function reAnchor() {
   }
 }
 
+// Timer bookkeeping so pause / restart / menu can cancel anything pending.
+function scheduleTimer(fn, ms) {
+  const id = setTimeout(() => {
+    state.pendingTimers = state.pendingTimers.filter((t) => t !== id);
+    fn();
+  }, ms);
+  state.pendingTimers.push(id);
+  return id;
+}
+
+function clearTimers() {
+  state.pendingTimers.forEach(clearTimeout);
+  state.pendingTimers = [];
+}
+
+function beginPosing(ms) {
+  state.deadline = performance.now() + ms;
+  setPhase('posing');
+  startTension(ms, state.mode === 'elim');
+}
+
 function launchRound(pose, duration) {
+  clearTimers();
   els.resultOverlay.classList.add('hidden');
   state.usedPoses.add(pose);
   reAnchor();
@@ -967,12 +1044,59 @@ function launchRound(pose, duration) {
   els.scoreLabel.textContent = `⭐ ${state.totalScore}`;
 
   setPhase('getready');
-  setTimeout(() => {
-    if (state.phase !== 'getready') return;
-    state.deadline = performance.now() + state.roundDuration * 1000;
-    setPhase('posing');
-    startTension(state.roundDuration * 1000, state.mode === 'elim');
-  }, GET_READY_MS);
+  state.getReadyUntil = performance.now() + GET_READY_MS;
+  state.readyTick = -1;
+  scheduleTimer(() => beginPosing(state.roundDuration * 1000), GET_READY_MS);
+}
+
+// ---- Pause / restart / menu ----------------------------------------------
+
+function pauseGame() {
+  if (!['getready', 'posing'].includes(state.phase)) return;
+  const now = performance.now();
+  state.pauseInfo = {
+    phase: state.phase,
+    remaining: (state.phase === 'posing' ? state.deadline : state.getReadyUntil) - now,
+  };
+  clearTimers();
+  stopTension();
+  try { speechSynthesis.cancel(); } catch (e) {}
+  setPhase('paused');
+  els.pauseOverlay.classList.remove('hidden');
+}
+
+function resumeGame() {
+  els.pauseOverlay.classList.add('hidden');
+  const info = state.pauseInfo;
+  if (!info) return;
+  const rem = Math.max(400, info.remaining);
+  if (info.phase === 'getready') {
+    setPhase('getready');
+    state.getReadyUntil = performance.now() + rem;
+    state.readyTick = -1;
+    scheduleTimer(() => beginPosing(state.roundDuration * 1000), rem);
+  } else {
+    beginPosing(rem);
+  }
+  state.pauseInfo = null;
+}
+
+function restartRound() {
+  els.pauseOverlay.classList.add('hidden');
+  state.pauseInfo = null;
+  launchRound(state.currentPose, state.roundDuration);
+}
+
+function quitToMenu() {
+  els.pauseOverlay.classList.add('hidden');
+  els.resultOverlay.classList.add('hidden');
+  clearTimers();
+  stopTension();
+  try { speechSynthesis.cancel(); } catch (e) {}
+  state.pauseInfo = null;
+  setPhase('idle');
+  els.startBtn.disabled = false;
+  showScreen('start');
 }
 
 function nextRound() {
@@ -986,7 +1110,7 @@ function startElimination() {
   setPhase('elim-intro');
   elimSting();
   speak('Elimination time! Beat the target score, or you are out!');
-  setTimeout(() => {
+  scheduleTimer(() => {
     if (state.phase === 'elim-intro') nextElimLevel();
   }, 3600);
 }
@@ -1247,6 +1371,10 @@ els.rescanBtn.addEventListener('click', () => {
   startScan();
 });
 els.stripBtn.addEventListener('click', saveStrip);
+els.pauseBtn.addEventListener('click', pauseGame);
+els.resumeBtn.addEventListener('click', resumeGame);
+els.restartBtn.addEventListener('click', restartRound);
+els.menuBtn.addEventListener('click', quitToMenu);
 els.judgeButtons.querySelectorAll('button').forEach((btn) => {
   btn.addEventListener('click', () => resolveScore(Number(btn.dataset.score)));
 });

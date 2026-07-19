@@ -46,6 +46,17 @@
     </div>
 
     <button id="skip-scan" class="btn ghost skip hidden">Skip scan ➜</button>
+    <button id="pause-btn" class="pause-btn hidden" aria-label="Pause">⏸</button>
+
+    <!-- Pause menu -->
+    <div id="pause-overlay" class="overlay hidden">
+      <div class="card pause-card">
+        <div class="pause-title">Paused</div>
+        <button id="resume-btn" class="btn big">▶ Resume</button>
+        <button id="restart-btn" class="btn">↻ Restart round</button>
+        <button id="menu-btn" class="btn ghost">🏠 Main menu</button>
+      </div>
+    </div>
 
     <!-- Self-judge overlay (only when auto-scoring is unavailable) -->
     <div id="result-overlay" class="overlay hidden">
