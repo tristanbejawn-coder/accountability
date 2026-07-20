@@ -77,11 +77,34 @@ If you don't pick within 8s it defaults to Easy, so the hands-free flow still
 works. Uses the same pose-landmark tracking as the scan.
 
 **🔊 Voice** (settings on the home screen): choose between the free built-in
-**device voice** (pick any installed voice) or **ElevenLabs**. For ElevenLabs,
-paste your own API key — it's stored only in your browser's `localStorage`,
-never sent anywhere but ElevenLabs and never committed — then Connect to list
-and pick a voice. All announcements route through it, with automatic fallback
-to the device voice on any error.
+**device voice** (pick any installed voice), **ElevenLabs** live, or a
+**prebaked pack**. For ElevenLabs live, paste your own API key — stored only
+in your browser's `localStorage`, never committed — then Connect to list and
+pick a voice. All announcements route through the chosen provider, with
+automatic fallback to the device voice on any error.
+
+### Prebaked voice pack (recommended for a shared build)
+
+Generating an ElevenLabs clip on every play adds latency and cost and needs
+every player to have a key. Instead you can **pre-render the whole voice pack
+once** and ship it as audio files — then the game plays instant local clips
+and no player needs a key:
+
+```bash
+ELEVENLABS_API_KEY=sk_...  ELEVENLABS_VOICE_ID=<voice_id> \
+  node scripts/generate-voice.mjs
+git add assets/voice && git commit -m "Add voice pack"
+```
+
+This renders one MP3 per fixed phrase (every pose's name + tip, all score
+commentary, difficulty labels, scan/flow lines) plus number clips `0…150` and
+connective words into `assets/voice/`, with a `manifest.json`. At runtime the
+game auto-detects the pack, defaults to it, and composes dynamic lines like
+"78 points — Nice squeeze!" from the number + word + comment clips (see
+`say()` in `js/game.js`). Your API key is only read from the environment —
+it's never written to disk or the manifest. Re-run after changing pose text
+(`--force` re-renders everything). Only ship audio for a voice your ElevenLabs
+plan lets you distribute.
 
 The countdown has a tense soundtrack: accelerating tick-tock, heartbeat, and
 a rising panic whine, synthesized in WebAudio (plus a sad trombone when
@@ -104,11 +127,13 @@ One in-browser model does everything:
   - **coverage** (recall) — how much of the outline you filled
   - **precision** — how much of you stayed inside the outline
 
-  These are combined with an **F-beta overlap score** (β = 0.7, precision-
+  These are combined with an **F-beta overlap score** (β = 0.6, precision-
   leaning) so that spilling outside the shape — the "just stand close and be
-  a big blob" exploit — is punished harder than a small miss. A gentle curve
-  keeps good-but-imperfect fits rewarding. A perfect fit is 100; a shapeless
-  blob covering the whole outline only scores ~60.
+  a big blob" exploit — is punished harder than a small miss, then put through
+  a steep curve (`score = 100 · f^1.5`) so only a near-perfect overlap scores
+  high. A perfect fit is 100; a slightly-off fit lands in the low 50s; a
+  shapeless blob covering the whole outline only scores ~35. Elimination
+  thresholds (32 → 68) are tuned to this curve.
 
 Poses are defined as limb *angles*; forward kinematics in `js/skeleton.js`
 combines them with your measured segment lengths to build the silhouette,

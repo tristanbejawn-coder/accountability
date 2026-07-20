@@ -100,17 +100,20 @@ const state = {
 // ---------------------------------------------------------------------------
 
 const voice = {
-  provider: 'device', // 'device' | 'eleven'
+  provider: 'device', // 'device' | 'eleven' | 'pack'
   deviceVoiceURI: '',
   elevenKey: '',
   elevenVoiceId: '',
   audio: null,
   cache: new Map(),
+  pack: null,      // { entries: {slug: file}, dir }
+  clipQueue: [],
+  clipEl: null,
 };
 
 function loadVoiceSettings() {
   try {
-    voice.provider = localStorage.getItem('orVoiceProvider') || 'device';
+    voice.provider = localStorage.getItem('orVoiceProvider') || '';
     voice.deviceVoiceURI = localStorage.getItem('orDeviceVoice') || '';
     voice.elevenKey = localStorage.getItem('orElevenKey') || '';
     voice.elevenVoiceId = localStorage.getItem('orElevenVoice') || '';
@@ -120,6 +123,48 @@ loadVoiceSettings();
 
 function stripEmoji(text) {
   return text.replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}…—]/gu, '').trim();
+}
+
+// Stable slug shared with scripts/generate-voice.mjs (must match exactly).
+function voiceSlug(text) {
+  const s = stripEmoji(text).toLowerCase().replace(/\s+/g, ' ').trim();
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return 'v' + (h >>> 0).toString(16).padStart(8, '0');
+}
+
+// Load a prebaked voice pack if one was generated & committed.
+async function loadVoicePack() {
+  try {
+    const res = await fetch('assets/voice/manifest.json', { cache: 'no-cache' });
+    if (!res.ok) return;
+    const m = await res.json();
+    if (m && m.entries) {
+      voice.pack = m;
+      if (!voice.provider) voice.provider = 'pack'; // prefer prebaked by default
+    }
+  } catch (e) {}
+  if (!voice.provider) voice.provider = 'device';
+}
+loadVoicePack();
+
+// Play a sequence of prebaked clip URLs back-to-back.
+function playClips(urls) {
+  voice.clipQueue = urls.slice();
+  if (voice.clipEl) { voice.clipEl.onended = null; voice.clipEl.pause(); }
+  const next = () => {
+    const u = voice.clipQueue.shift();
+    if (!u) { voice.clipEl = null; return; }
+    const a = new Audio(u);
+    voice.clipEl = a;
+    a.onended = next;
+    a.onerror = next;
+    a.play().catch(() => next());
+  };
+  next();
 }
 
 function speakDevice(text) {
@@ -173,6 +218,25 @@ function speak(text) {
   if (!clean) return;
   if (voice.provider === 'eleven') speakEleven(clean);
   else speakDevice(clean);
+}
+
+// Structured announcement. `pieces` are individually-prebakeable phrases
+// (e.g. ['78', 'points', 'Nice squeeze!']). With a prebaked pack we play the
+// matching clips in sequence; otherwise we speak the joined text live.
+function say(pieces) {
+  const parts = pieces.map((p) => (p == null ? '' : String(p)).trim()).filter(Boolean);
+  if (!parts.length) return;
+  if (voice.provider === 'pack' && voice.pack) {
+    const urls = [];
+    let ok = true;
+    for (const p of parts) {
+      const file = voice.pack.entries[voiceSlug(p)];
+      if (!file) { ok = false; break; }
+      urls.push('assets/voice/' + file);
+    }
+    if (ok) { playClips(urls); return; }
+  }
+  speak(parts.join(' '));
 }
 
 // ---------------------------------------------------------------------------
@@ -583,14 +647,14 @@ function updateScan(now) {
     sc.lastInstr = sc.framing;
     sc.lastInstrAt = now;
     sc.saidHold = false;
-    speak(prompt.say);
+    say([prompt.say]);
   }
   if (sc.framing !== 'ok') {
     sc.inPose = false;
   } else if (sc.inPose && !sc.saidHold) {
     sc.saidHold = true;
     sc.lastInstr = '';
-    speak('Perfect! Hold still!');
+    say(['Perfect! Hold still!']);
   }
 
   if (sc.inPose) {
@@ -624,7 +688,7 @@ function updateScan(now) {
     setPhase('calibrated');
     state.calibratedAt = now;
     playLockChirp();
-    speak('Calibrated! Let\'s play!');
+    say(["Calibrated! Let's play!"]);
     setTimeout(beginRounds, 1500);
   }
 }
@@ -801,11 +865,13 @@ function computeScore(personMaskCanvas) {
   // F-beta overlap with beta < 1 leans on precision, so spilling outside the
   // shape (the "just be a big blob" exploit) is punished harder than a small
   // miss. Only genuinely matching the outline scores high.
-  const b2 = 0.49; // beta = 0.7
+  const b2 = 0.36; // beta = 0.6, leans harder on precision
   const denom = b2 * precision + coverage;
   const fb = denom ? ((1 + b2) * precision * coverage) / denom : 0;
-  // Gentle curve keeps good-but-imperfect fits rewarding without cheapening 100.
-  return Math.round(100 * Math.min(1, Math.pow(fb, 0.8)));
+  // Steep curve: only a near-perfect overlap earns a high score. A decent-but-
+  // loose fit that used to score ~70 now lands in the low 50s.
+  const SCORE_GAMMA = 1.5;
+  return Math.round(100 * Math.min(1, Math.pow(fb, SCORE_GAMMA)));
 }
 
 // ---------------------------------------------------------------------------
@@ -1056,8 +1122,8 @@ function startScan() {
   state.calibVideo = null;
   resetScan();
   setPhase('scan');
-  speak('Body scan time! I\'ll measure you so the outlines fit your body. ' +
-    'Stand back so I can see all of you, spread your arms wide, and hold still.');
+  say(["Body scan time! I'll measure you so the outlines fit your body. " +
+    'Stand back so I can see all of you, spread your arms wide, and hold still.']);
 }
 
 function skipScan() {
@@ -1136,10 +1202,10 @@ function launchRound(pose, duration) {
 
   if (state.mode === 'elim') {
     els.roundLabel.textContent = `☠️ Level ${state.level}`;
-    speak(`Level ${state.level}. ${pose.name}! ${pose.tip} Beat ${state.threshold}!`);
+    say([`${pose.name}! ${pose.tip}`, 'Beat your target!']);
   } else {
     els.roundLabel.textContent = `Round ${state.round + 1}/${NORMAL_ROUNDS}`;
-    speak(`${pose.name}! ${pose.tip}`);
+    say([`${pose.name}! ${pose.tip}`]);
   }
   els.poseLabel.textContent = `${pose.emoji} ${pose.name} — ${pose.tip}`;
   els.scoreLabel.textContent = `⭐ ${state.totalScore}`;
@@ -1232,7 +1298,7 @@ function enterChoose(after) {
     lastFrameAt: 0, lastDetectAt: 0, det: null,
   };
   setPhase('choose');
-  speak('Reach a hand up to pick your difficulty! Medium and hard score bonus points.');
+  say(['Reach a hand up to pick your difficulty! Medium and hard score bonus points.']);
 }
 
 // Lay the three bubbles out in an arc above the player's head, kept within a
@@ -1304,7 +1370,7 @@ function lockChoice(i) {
   c.picked = i;
   const choice = DIFF_CHOICES[i];
   playLockChirp();
-  speak(`${choice.label}!` + (choice.mult > 1 ? ` ${choice.mult} times bonus!` : ''));
+  say([`${choice.label}!`, choice.mult > 1 ? `${choice.mult} times bonus!` : '']);
   scheduleTimer(() => c.after(choice.d, choice.mult), 800);
 }
 
@@ -1385,7 +1451,7 @@ function startElimination() {
   els.resultOverlay.classList.add('hidden');
   setPhase('elim-intro');
   elimSting();
-  speak('Elimination time! Beat the target score, or you are out!');
+  say(['Elimination time! Beat the target score, or you are out!']);
   scheduleTimer(() => {
     if (state.phase === 'elim-intro') nextElimLevel();
   }, 3600);
@@ -1409,7 +1475,8 @@ function elimPool() {
 }
 
 function nextElimLevel() {
-  state.threshold = Math.min(80, 40 + 5 * state.level);
+  // Thresholds tuned for the stricter scoring curve.
+  state.threshold = Math.min(68, 32 + 4 * state.level);
   const duration = Math.max(2, 4.5 - 0.3 * (state.level - 1));
   if (state.level >= 2) notice('⚠ The outline is shrinking…', 2500);
   if (state.handPick && Tracker.ready()) {
@@ -1489,17 +1556,17 @@ function resolveScore(base) {
     if (state.lastSurvived) {
       result.sub = (bonusLine ? bonusLine + '  ·  ' : '') + `😅 SURVIVED (${state.threshold})`;
       playFanfare(true);
-      speak(`${score} points.${mult > 1 ? ' Bonus!' : ''} ${c.text} Survived!`);
+      say([String(score), 'points', mult > 1 ? 'Bonus!' : '', c.text, 'Survived!']);
     } else {
       result.comment = 'ELIMINATED!';
       result.color = '#ff5c5c';
       result.sub = `☠️ Got ${score}, needed ${state.threshold}`;
       sadTrombone();
-      speak(`${score} points. Eliminated!`);
+      say([String(score), 'points', 'Eliminated!']);
     }
   } else {
     playFanfare(base >= 55);
-    speak(`${score} points.${mult > 1 ? ' With bonus!' : ''} ${c.text}`);
+    say([String(score), 'points', mult > 1 ? 'With bonus!' : '', c.text]);
   }
 
   state.result = result;
@@ -1537,7 +1604,7 @@ function showFinal() {
   els.finalRank.textContent =
     `☠️ Knocked out at Level ${state.level} — ${rankForLevel(state.level)}`;
   buildGallery();
-  speak(`Game over! ${state.totalScore} points. Check out your photos!`);
+  say(['Game over!', String(state.totalScore), 'points', 'Check out your photos!']);
   showScreen('final');
 }
 
@@ -1755,13 +1822,15 @@ refreshHandPick();
   }
 
   function refreshProvider() {
+    $('provider-pack').classList.toggle('hidden', !voice.pack);
     $('voice-provider').querySelectorAll('button').forEach((b) =>
       b.classList.toggle('active', b.dataset.provider === voice.provider));
     elevenRows.classList.toggle('hidden', voice.provider !== 'eleven');
-    deviceRow.classList.toggle('hidden', voice.provider === 'eleven');
-    summary.textContent = voice.provider === 'eleven'
-      ? (voice.elevenVoiceId ? 'ElevenLabs voice' : 'ElevenLabs (needs key)')
-      : 'Device voice';
+    deviceRow.classList.toggle('hidden', voice.provider !== 'device');
+    summary.textContent = voice.provider === 'pack' ? 'Prebaked clips'
+      : voice.provider === 'eleven'
+        ? (voice.elevenVoiceId ? 'ElevenLabs voice' : 'ElevenLabs (needs key)')
+        : 'Device voice';
   }
 
   keyInput.value = voice.elevenKey;
@@ -1817,7 +1886,7 @@ refreshHandPick();
     refreshProvider();
   });
   $('eleven-connect').addEventListener('click', connectEleven);
-  $('voice-test').addEventListener('click', () => speak('Star Jump! Arms up and out, legs wide!'));
+  $('voice-test').addEventListener('click', () => say(['Star Jump! Arms up and out, legs wide!']));
   $('voice-done').addEventListener('click', () => modal.classList.add('hidden'));
 
   refreshProvider();
