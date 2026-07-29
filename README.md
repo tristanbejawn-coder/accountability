@@ -160,3 +160,9 @@ Add a new pose by appending an angle set to `POSES` in `js/game.js`
 angles cross inward). Optional `lean` tilts the upper body for balance poses,
 and `difficulty` (1–3) controls when it appears — warm-up rounds use 1–2,
 elimination levels 5+ use only 3.
+
+## Reel assembly pipeline (`reelkit/`)
+
+This repo also carries **reelkit**, a config-driven ffmpeg pipeline that
+assembles an 18-second 9:16 "The Edit" Instagram Reel from photographic
+stills and two pre-generated AI clips — see [reelkit/README.md](reelkit/README.md).
