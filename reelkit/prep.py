@@ -478,6 +478,10 @@ def main(argv=None):
                     help="index into the selects used as hero/final frame; "
                          "a filename containing 'hero' wins by convention "
                          "unless this flag is passed explicitly")
+    ap.add_argument("--selects", default=None,
+                    help="comma-separated filenames (within --stills) used as "
+                         "the five non-hero round-1 selects, in order; "
+                         "default: first five in sort order after the hero")
     ap.add_argument("--out", help="asset dir (default assets/<series-slug>)")
     ap.add_argument("--force", action="store_true",
                     help="overwrite an existing reel.yaml")
@@ -503,7 +507,18 @@ def main(argv=None):
         if named:
             src = [named[0]] + [p for p in src if p != named[0]]
             print(f"hero by filename convention: {named[0].name}")
-        picks = (src * 6)[:6] if len(src) < 6 else src[:6]
+        if args.selects:
+            # explicit curation: hero + the five named frames, in order
+            sel_paths, missing = [], []
+            for name in [n.strip() for n in args.selects.split(",") if n.strip()]:
+                p = Path(args.stills) / name
+                (sel_paths if p.exists() else missing).append(p)
+            if missing:
+                raise SystemExit("--selects not found in --stills dir:\n" +
+                                 "\n".join(f"  * {p.name}" for p in missing))
+            picks = ([src[0]] + [p for p in sel_paths if p != src[0]])[:6]
+        else:
+            picks = (src * 6)[:6] if len(src) < 6 else src[:6]
         selects = []
         for i, p in enumerate(picks):
             dst = out_dir / f"select_{i + 1:02d}{p.suffix.lower()}"
@@ -511,7 +526,13 @@ def main(argv=None):
             im.thumbnail((2400, 2400), Image.LANCZOS)
             im.save(dst, quality=90)
             selects.append(dst)
-        print(f"selects: {len(src)} stills found, using first 6")
+        print(f"selects: {len(src)} stills found, "
+              f"{'curated via --selects' if args.selects else 'using first 6'}")
+        # the contact sheet tiles the WHOLE folder — a real sheet shows the
+        # take, not six frames cycled; cell pinning below still guarantees
+        # the lit cells show the six selects and the circle rings the hero
+        sheet_sources = src
+        sheet_pick_idx = [src.index(p) for p in picks]
     else:
         print("no --stills given: generating 6 labelled test plates")
         selects = []
@@ -520,6 +541,8 @@ def main(argv=None):
             if not dst.exists():
                 synth_plate(i, dst, fonts["regular"])
             selects.append(dst)
+        sheet_sources = selects
+        sheet_pick_idx = list(range(len(selects)))
 
     hero_idx = args.hero if args.hero is not None else 0
     hero_idx = max(0, min(hero_idx, len(selects) - 1))
@@ -532,16 +555,17 @@ def main(argv=None):
     # off-centre (row 1, col 5 of 8). The cell map pins the hero into the
     # circled cell and one distinct select into each other lit cell, so the
     # narrowing beats light six different frames and the circle rings the
-    # frame the reel actually ends on.
+    # frame the reel actually ends on. Indices refer to sheet_sources.
     cells6 = [2, 5, 9, 13, 18, 22]
     final_cell = 13
-    others = [i for i in range(len(selects)) if i != hero_idx]
-    cell_map = {final_cell: hero_idx}
+    others = [sheet_pick_idx[i] for i in range(len(selects)) if i != hero_idx]
+    cell_map = {final_cell: sheet_pick_idx[hero_idx]}
     cell_map.update(dict(zip([c for c in cells6 if c != final_cell], others)))
 
     sheet = out_dir / "contact.jpg"
     tag = "".join(w[0] for w in slug.split("-"))[:3].upper() or "TP"
-    grid = build_contact_sheet(selects, sheet, fonts["regular"], tag, cell_map)
+    grid = build_contact_sheet(sheet_sources, sheet, fonts["regular"], tag,
+                               cell_map)
     circ = circle_for_cell(grid, final_cell)
 
     # --- grades + final frame ----------------------------------------------

@@ -28,3 +28,10 @@ python3 reelkit/assemble.py
 
 (The `rm` forces the two stand-in clips to regenerate from the real
 contact sheet and hero instead of the test plates.)
+
+---
+*Provenance: the 22 frames in this folder were pulled from the published
+series at https://bej1.co.uk/thaipusam (Squarespace CDN, ~2048px web
+exports). `hero_tp_20.jpg` is the hero per Tristan's pick — the devotee in
+trance on the ground. For a crisper master, re-run prep against the
+full-resolution originals from the bej1 backup and re-render.*
