@@ -68,7 +68,7 @@ selects_grid:                 # geometry written by prep — matches the sheet
   ch: 0.2762
   gx: 0.01
   gy: 0.0413
-  cells_round_1: [1, 5, 10, 13, 18, 22]
+  cells_round_1: [2, 5, 9, 13, 18, 22]
   cell_final: 13
 
 timeline:                     # seconds; per-series beat lengths

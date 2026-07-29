@@ -142,9 +142,12 @@ ROWS, COLS = 3, 8       # 24 cells of ~2:3 portrait frames
 
 
 def build_contact_sheet(stills: list, out_path: Path, label_font: str,
-                        series_tag: str):
+                        series_tag: str, cell_map: dict | None = None):
     """Tile the stills across a 3x8 grid, cycling with exposure/crop jitter
-    so repeats read as neighbouring takes. Returns the normalised grid
+    so repeats read as neighbouring takes. `cell_map` pins specific cells to
+    specific stills (cell index -> still index) — used so the six lit cells
+    show six *distinct* frames and the circled cell shows the hero, not
+    whatever the cycling happened to land there. Returns the normalised grid
     geometry that reel.yaml records for segment D."""
     margin, gx, gy, label_h = 48, 24, 22, 44
     cw = (SHEET_W - 2 * margin - (COLS - 1) * gx) // COLS
@@ -163,11 +166,12 @@ def build_contact_sheet(stills: list, out_path: Path, label_font: str,
         im = Image.open(p).convert("RGB")
         thumbs.append(im)
 
+    cell_map = cell_map or {}
     for idx in range(ROWS * COLS):
         r, c = divmod(idx, COLS)
         x = margin + c * (cw + gx)
         y = margin + r * (ch + gy + label_h)
-        src = thumbs[idx % len(thumbs)]
+        src = thumbs[cell_map.get(idx, idx % len(thumbs)) % len(thumbs)]
 
         # cover-crop the still to the cell aspect, with take-to-take jitter
         jx, jy = rng.uniform(-0.04, 0.04), rng.uniform(-0.04, 0.04)
@@ -470,8 +474,10 @@ def main(argv=None):
     ap.add_argument("--site", default="tristanbejawn.com")
     ap.add_argument("--name", default="Tristan Bejawn")
     ap.add_argument("--city", default="London")
-    ap.add_argument("--hero", type=int, default=0,
-                    help="index into the selects used as hero/final frame")
+    ap.add_argument("--hero", type=int, default=None,
+                    help="index into the selects used as hero/final frame; "
+                         "a filename containing 'hero' wins by convention "
+                         "unless this flag is passed explicitly")
     ap.add_argument("--out", help="asset dir (default assets/<series-slug>)")
     ap.add_argument("--force", action="store_true",
                     help="overwrite an existing reel.yaml")
@@ -491,6 +497,12 @@ def main(argv=None):
               sorted(Path(args.stills).glob("*.png"))
         if not src:
             raise SystemExit(f"no images found in {args.stills}")
+        # convention: a filename containing 'hero' is the hero frame and
+        # sorts to the front (an explicit --hero index overrides it)
+        named = [p for p in src if "hero" in p.stem.lower()]
+        if named:
+            src = [named[0]] + [p for p in src if p != named[0]]
+            print(f"hero by filename convention: {named[0].name}")
         picks = (src * 6)[:6] if len(src) < 6 else src[:6]
         selects = []
         for i, p in enumerate(picks):
@@ -509,19 +521,27 @@ def main(argv=None):
                 synth_plate(i, dst, fonts["regular"])
             selects.append(dst)
 
-    hero_src = selects[max(0, min(args.hero, len(selects) - 1))]
+    hero_idx = args.hero if args.hero is not None else 0
+    hero_idx = max(0, min(hero_idx, len(selects) - 1))
+    hero_src = selects[hero_idx]
     hero = out_dir / "hero.jpg"
     Image.open(hero_src).convert("RGB").save(hero, quality=92)
 
     # --- contact sheet + grid geometry -------------------------------------
+    # Six lit cells spread across the grid; the final pick sits just
+    # off-centre (row 1, col 5 of 8). The cell map pins the hero into the
+    # circled cell and one distinct select into each other lit cell, so the
+    # narrowing beats light six different frames and the circle rings the
+    # frame the reel actually ends on.
+    cells6 = [2, 5, 9, 13, 18, 22]
+    final_cell = 13
+    others = [i for i in range(len(selects)) if i != hero_idx]
+    cell_map = {final_cell: hero_idx}
+    cell_map.update(dict(zip([c for c in cells6 if c != final_cell], others)))
+
     sheet = out_dir / "contact.jpg"
     tag = "".join(w[0] for w in slug.split("-"))[:3].upper() or "TP"
-    grid = build_contact_sheet(selects, sheet, fonts["regular"], tag)
-
-    # six lit cells spread across the grid; the final pick sits just
-    # off-centre (row 1, col 5 of 8) — override in reel.yaml if you re-tile
-    cells6 = [1, 5, 10, 13, 18, 22]
-    final_cell = 13
+    grid = build_contact_sheet(selects, sheet, fonts["regular"], tag, cell_map)
     circ = circle_for_cell(grid, final_cell)
 
     # --- grades + final frame ----------------------------------------------
