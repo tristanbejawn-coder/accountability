@@ -54,6 +54,15 @@ def print_timeline(cfg: dict, tl, root: Path, fonts: dict, out_path: Path):
           f" ducked at shutter hits)")
     print(f"  room     : {tl.room_span[0]:.2f} -> {tl.room_span[1]:.2f}")
     print(f"  shutter  : " + ", ".join(f"{t:.2f}" for t in tl.shutter_times))
+    audio = cfg.get("audio") or {}
+    if audio.get("film_advance"):
+        print(f"  wind-on  : " + ", ".join(f"{t:.2f}" for t in tl.advance_times))
+    if audio.get("film_texture"):
+        print(f"  texture  : {tl.room_span[0]:.2f} -> {tl.room_span[1]:.2f}"
+              f"  (projector gate, low)")
+    moves = C.resolve_movement(cfg)
+    active = ", ".join(f"{k} -> x{v:.3f}" for k, v in moves.items() if v > 1.0001)
+    print(f"  movement : {active or 'none (all still segments static)'}")
 
 
 def print_asset_map(cfg: dict, root: Path):
@@ -163,7 +172,7 @@ def main(argv=None):
     log = work / "commands.log"
     assets = cfg["assets"]
 
-    r = SegmentRenderer(root, work, q, log)
+    r = SegmentRenderer(root, work, q, log, movement=C.resolve_movement(cfg))
     print(f"\n  rendering at {q['w']}x{q['h']} crf {q['crf']} ({fonts['name']})")
 
     sheet_base, fit = r.sheet_base(root / assets["contact_sheet"])

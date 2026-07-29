@@ -67,16 +67,46 @@ def build_audio(root: Path, work: Path, cfg: dict, timeline, log: Path) -> Path:
         ms = round(t * 1000)
         click_chains.append(f"[k{i}]adelay={ms}|{ms},apad,atrim=0:{T:.4f}[c{i}]")
 
-    # --- mix (no auto-normalise: levels are the trims above) ---------------
-    mix_inputs = "[bed][room]" + "".join(f"[c{i}]" for i in range(n))
-    mix_chain = (f"{mix_inputs}amix=inputs={2 + n}:normalize=0"
-                 f":duration=first[mix]")
-
-    graph = ";".join([bed_chain, room_chain, *click_chains, mix_chain])
-
     inputs = ["-i", root / cfg["audio"]["music_bed"],
               "-i", root / cfg["audio"]["room_tone"],
               "-i", root / cfg["audio"]["shutter"]]
+    extra_chains, extra_pads = [], []
+    next_in = 3
+
+    # --- optional: film wind-on, one copy per advance event ----------------
+    if cfg["audio"].get("film_advance"):
+        inputs += ["-i", root / cfg["audio"]["film_advance"]]
+        na = len(timeline.advance_times)
+        extra_chains.append(
+            f"[{next_in}:a]{fmt},volume={audio_cfg['film_advance_db']}dB,"
+            f"asplit={na}" + "".join(f"[w{i}]" for i in range(na)))
+        for i, t in enumerate(timeline.advance_times):
+            ms = round(t * 1000)
+            extra_chains.append(
+                f"[w{i}]adelay={ms}|{ms},apad,atrim=0:{T:.4f}[adv{i}]")
+            extra_pads.append(f"[adv{i}]")
+        next_in += 1
+
+    # --- optional: projector-gate texture, same span as the room tone ------
+    if cfg["audio"].get("film_texture"):
+        inputs += ["-i", root / cfg["audio"]["film_texture"]]
+        extra_chains.append(
+            f"[{next_in}:a]{fmt},apad,atrim=0:{room_len:.4f},"
+            f"volume={audio_cfg['film_texture_db']}dB,"
+            f"afade=t=in:st=0:d=0.4,"
+            f"afade=t=out:st={room_len - 0.5:.4f}:d=0.5,"
+            f"adelay={room_ms}|{room_ms},apad,atrim=0:{T:.4f}[tex]")
+        extra_pads.append("[tex]")
+        next_in += 1
+
+    # --- mix (no auto-normalise: levels are the trims above) ---------------
+    mix_inputs = ("[bed][room]" + "".join(f"[c{i}]" for i in range(n))
+                  + "".join(extra_pads))
+    mix_chain = (f"{mix_inputs}amix=inputs={2 + n + len(extra_pads)}:normalize=0"
+                 f":duration=first[mix]")
+
+    graph = ";".join([bed_chain, room_chain, *click_chains,
+                      *extra_chains, mix_chain])
 
     # AAC encoding overshoots the loudnorm ceiling by a few tenths of a dB,
     # so normalise 0.5 below the spec'd true peak and let the codec ring

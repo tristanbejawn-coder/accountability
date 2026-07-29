@@ -36,12 +36,22 @@ audio:
   music_bed: audio/bed_standin.wav
   shutter: audio/shutter_standin.wav
   room_tone: audio/room_standin.wav
+  # Kodak-flavour layers (delete either line to drop the layer):
+  film_advance: audio/advance_standin.wav     # wind-on ratchet, fires as the circle lands
+  film_texture: audio/texture_standin.wav     # projector-gate hiss/flicker under C..F
   target_lufs: -14.0
   true_peak: -1.0
   bed_db: -7.0
   room_db: -16.0
   shutter_db: 0.0
   duck_db: -2.0
+  film_advance_db: -4.0
+  film_texture_db: -28.0
+
+movement:                     # end scale of an eased push per still segment
+  A: 1.05                     # opener push-in
+  B: 1.0                      # static: the cut into clip C keeps its framing
+  D: 1.025                    # slow creep on the lightbox
 
 selects_circle:               # centred on cell 13 of the sheet grid
   x: 0.6821

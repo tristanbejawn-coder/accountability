@@ -21,6 +21,22 @@ from reelkit.ffkit import run
 from reelkit.overlays import (fit_contain, render_dim_mask,
                               render_circle_sequence, render_end_card)
 
+# Still segments that move (A/B/D pushes) are composed at this supersample so
+# zoompan never crops below output resolution mid-push.
+SS = 1.12
+
+
+def zoom_tail(z_end: float, n: int, W: int, H: int, fps: int) -> str:
+    """Filter tail applying an eased push from 1.0 to z_end across n frames,
+    landing on exactly WxH. z_end == 1.0 degrades to a plain downscale.
+    The ease is a cosine smoothstep — starts and settles gently, no
+    mechanical linear read."""
+    if z_end <= 1.0001:
+        return f"scale={W}:{H}:flags=lanczos,setsar=1"
+    return (f"zoompan=z='1+{z_end - 1:.4f}*(0.5-0.5*cos(PI*on/{n - 1}))'"
+            f":x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2'"
+            f":d=1:s={W}x{H}:fps={fps},setsar=1")
+
 
 def enc_args(q: dict) -> list:
     """Shared encoder settings for every intermediate — identical params are
@@ -45,11 +61,16 @@ def vf_cover(W: int, H: int) -> str:
 
 
 class SegmentRenderer:
-    def __init__(self, root: Path, work: Path, q: dict, log: Path):
+    def __init__(self, root: Path, work: Path, q: dict, log: Path,
+                 movement: dict | None = None):
         self.root = root
         self.work = work
         self.q = q            # {'w','h','fps','crf','preset'}
         self.log = log
+        self.movement = movement or {}
+        # supersampled canvas for the moving still segments
+        self.sw = round(q["w"] * SS / 2) * 2
+        self.sh = round(q["h"] * SS / 2) * 2
 
     # -- shared plumbing ----------------------------------------------------
 
@@ -63,29 +84,41 @@ class SegmentRenderer:
     def sheet_base(self, contact_sheet: Path):
         """Compose the contact sheet, letterboxed on near-black, ONCE in
         Pillow — B and D reuse the same base png, and the dim masks / circle
-        share the same Fit, so everything lines up to the pixel."""
-        W, H = self.q["w"], self.q["h"]
+        share the same Fit, so everything lines up to the pixel. Composed at
+        the supersampled canvas so pushes never upscale."""
         base_path = self.work / "sheet_base.png"
         sheet = Image.open(contact_sheet).convert("RGB")
-        fit = fit_contain(sheet.width, sheet.height, W, H)
-        canvas = Image.new("RGB", (W, H), PAD_COLOUR)
+        fit = fit_contain(sheet.width, sheet.height, self.sw, self.sh)
+        canvas = Image.new("RGB", (self.sw, self.sh), PAD_COLOUR)
         canvas.paste(sheet.resize((fit.w, fit.h), Image.LANCZOS), (fit.x, fit.y))
         canvas.save(base_path)
         return base_path, fit
 
-    # -- A: final frame, full bleed, static ---------------------------------
+    # -- A: final frame, full bleed, eased push-in --------------------------
 
     def seg_A(self, seg, assets) -> Path:
+        q = self.q
         out = self.work / "seg_A.mp4"
-        self._encode_still(vf_cover(self.q["w"], self.q["h"]),
-                           self.root / assets["final_frame"], seg.dur, out)
+        n = frames_for(seg.dur, q["fps"])
+        # cover-crop at supersample, then the push lands on the output size
+        vf = (vf_cover(self.sw, self.sh) + f",fps={q['fps']},"
+              + zoom_tail(self.movement.get("A", 1.0), n, q["w"], q["h"], q["fps"]))
+        run(["ffmpeg", "-y", "-loop", "1", "-framerate", q["fps"],
+             "-i", self.root / assets["final_frame"], "-vf", vf,
+             "-frames:v", n, *enc_args(q), out], self.log)
         return out
 
     # -- B: hard cut to the contact sheet, wide -----------------------------
 
     def seg_B(self, seg, sheet_base: Path) -> Path:
+        q = self.q
         out = self.work / "seg_B.mp4"
-        self._encode_still("setsar=1", sheet_base, seg.dur, out)
+        n = frames_for(seg.dur, q["fps"])
+        vf = (f"fps={q['fps']},"
+              + zoom_tail(self.movement.get("B", 1.0), n, q["w"], q["h"], q["fps"]))
+        run(["ffmpeg", "-y", "-loop", "1", "-framerate", q["fps"],
+             "-i", sheet_base, "-vf", vf,
+             "-frames:v", n, *enc_args(q), out], self.log)
         return out
 
     # -- C / F: pre-rendered clips ------------------------------------------
@@ -116,23 +149,25 @@ class SegmentRenderer:
         t_one = seg.beats["b_full"] + seg.beats["b_six"]  # 1 frame lit
         cs = timeline.circle_start - seg.start            # pen touch-down
 
-        # Overlay artwork (screen space, shares `fit` with the base plate)
+        # Overlay artwork — composed on the supersampled canvas (same space
+        # as sheet_base/fit), so the whole stack pushes together afterwards
         mask6 = self.work / "mask_six.png"
         mask1 = self.work / "mask_one.png"
-        render_dim_mask(mask6, grid, grid["cells_round_1"], fit, W, H)
-        render_dim_mask(mask1, grid, [grid["cell_final"]], fit, W, H)
+        render_dim_mask(mask6, grid, grid["cells_round_1"], fit, self.sw, self.sh)
+        render_dim_mask(mask1, grid, [grid["cell_final"]], fit, self.sw, self.sh)
 
         circle_dir = self.work / "circle"
         n_draw = max(2, round(timeline.circle_draw * fps))
         # sequence must cover from touch-down to segment end (then some)
         hold = max(1, math.ceil((seg.dur - cs) * fps) - n_draw + 3)
-        render_circle_sequence(circle_dir, cfg["selects_circle"], fit, W, H,
-                               fps, timeline.circle_draw, hold)
+        render_circle_sequence(circle_dir, cfg["selects_circle"], fit,
+                               self.sw, self.sh, fps, timeline.circle_draw, hold)
 
+        n = frames_for(seg.dur, fps)
         # Filter graph, one overlay per layer:
         #   base sheet -> +dim(6 lit) during beat 2 -> +dim(1 lit) during
         #   beat 3 -> +circle sequence (PTS-shifted to touch down at `cs`,
-        #   last frame held to the cut)
+        #   last frame held to the cut) -> slow lightbox push to output size
         graph = ";".join([
             f"[0:v]fps={fps}[base]",
             "[1:v]format=rgba[m6]",
@@ -141,7 +176,8 @@ class SegmentRenderer:
             f"[base][m6]overlay=enable='between(t,{t_six:.4f},{t_one:.4f})'[v1]",
             f"[v1][m1]overlay=enable='gte(t,{t_one:.4f})'[v2]",
             f"[v2][circ]overlay=eof_action=repeat:enable='gte(t,{cs:.4f})'[v3]",
-            "[v3]format=yuv420p,setsar=1[vout]",
+            f"[v3]{zoom_tail(self.movement.get('D', 1.0), n, W, H, fps)},"
+            "format=yuv420p[vout]",
         ])
         out = self.work / "seg_D.mp4"
         run(["ffmpeg", "-y",
@@ -151,7 +187,7 @@ class SegmentRenderer:
              "-framerate", fps, "-start_number", "0", "-i",
              circle_dir / "circle_%04d.png",
              "-filter_complex", graph, "-map", "[vout]",
-             "-frames:v", frames_for(seg.dur, fps), *enc_args(q), out],
+             "-frames:v", n, *enc_args(q), out],
             self.log)
         return out
 

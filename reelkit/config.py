@@ -47,7 +47,16 @@ DEFAULT_AUDIO = {
     "shutter_db": 0.0,
     "duck_db": -2.0,        # bed dip under each shutter hit
     "duck_len": 0.30,       # seconds the dip lasts (from click start)
+    # Optional film elements (used when the files are configured):
+    "film_advance_db": -4.0,   # wind-on ratchet after the select is circled
+    "film_texture_db": -28.0,  # projector-gate hiss/flicker under C..F
 }
+
+# End scale of an eased push across a segment (1.0 = static). Only stills
+# take movement: A (opener), B (sheet flash) and D (lightbox). B defaults to
+# static so the cut into the pre-rendered contact push starts from the same
+# framing; C/F are pre-rendered and E has its own spec'd ramp.
+DEFAULT_MOVEMENT = {"A": 1.05, "B": 1.0, "D": 1.025}
 
 VIDEO_FULL = {"w": 1080, "h": 1920, "fps": 30, "crf": 18, "preset": "slow"}
 VIDEO_PREVIEW = {"w": 540, "h": 960, "fps": 30, "crf": 28, "preset": "veryfast"}
@@ -82,6 +91,7 @@ class Timeline:
     total: float
     # Derived audio events -------------------------------------------------
     shutter_times: list        # absolute times of every shutter click
+    advance_times: list        # film wind-on events (after the circle lands)
     bed_fade_in: float         # bed fades in across segment A
     room_span: tuple           # (start, end) of room tone (C through F)
     circle_start: float        # absolute time the chinagraph pen touches down
@@ -155,15 +165,29 @@ def resolve_timeline(cfg: dict) -> Timeline:
     circle_draw = float(circle_cfg.get("draw", DEFAULT_CIRCLE_DRAW))
     circle_start = seg_d.beats["one"] + float(circle_cfg.get("delay", DEFAULT_CIRCLE_DELAY))
 
+    # Film wind-on: the frame is marked, the lever advances — fires the
+    # moment the chinagraph stroke settles.
+    advance_times = [round(circle_start + circle_draw + 0.05, 4)]
+
     return Timeline(
         segments=segments,
         total=round(cursor, 4),
         shutter_times=[round(x, 4) for x in shutter_times],
+        advance_times=advance_times,
         bed_fade_in=seg_a.dur,
         room_span=(seg_c.start, seg_f.end),
         circle_start=round(circle_start, 4),
         circle_draw=circle_draw,
     )
+
+
+def resolve_movement(cfg: dict) -> dict:
+    """Per-segment end scales for the eased push-ins, config-overridable."""
+    m = dict(DEFAULT_MOVEMENT)
+    for k, v in (cfg.get("movement") or {}).items():
+        if k in m:
+            m[k] = float(v)
+    return m
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +258,10 @@ def validate(cfg: dict, root: Path) -> list:
 
     for key in REQUIRED_AUDIO_KEYS:
         check(audio.get(key), f"audio.{key}")
+    # Optional film elements: only validated when configured
+    for key in ("film_advance", "film_texture"):
+        if audio.get(key):
+            check(audio.get(key), f"audio.{key}")
 
     circ = cfg.get("selects_circle") or {}
     for k in ("x", "y", "w", "h"):
@@ -285,12 +313,22 @@ audio:
   music_bed: audio/bed.wav
   shutter: audio/shutter.wav
   room_tone: audio/room.wav
+  # Optional Kodak-flavour elements (omit either to drop the layer):
+  # film_advance: audio/advance.wav   # wind-on ratchet, fires as the circle lands
+  # film_texture: audio/texture.wav   # projector hiss/flicker, under C..F
   # Optional mix trims (dB, defaults shown) — balance only; the master is
   # normalised to target_lufs afterwards.
   # bed_db: -7.0
   # room_db: -16.0
   # shutter_db: 0.0
   # duck_db: -2.0
+  # film_advance_db: -4.0
+  # film_texture_db: -28.0
+
+movement:                  # end scale of an eased push per still segment
+  A: 1.05                  # opener push-in
+  B: 1.0                   # keep static so the cut into clip C matches framing
+  D: 1.025                 # slow creep on the lightbox
 
 selects_circle:            # normalised 0-1 coords of the chosen frame
   x: 0.42                  # centre x on the contact sheet

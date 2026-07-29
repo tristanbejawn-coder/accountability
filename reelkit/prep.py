@@ -294,12 +294,15 @@ def standin_living(hero: Path, out: Path, log: Path):
 
 def standin_audio(audio_dir: Path, log: Path) -> dict:
     """Synth stand-ins so the mix stage is exercised: a detuned sine pad
-    (bed), pink-noise air (room), and a two-burst mechanical click (shutter).
+    (bed), pink-noise air (room), an SLR-style two-curtain click (shutter),
+    a wind-on ratchet (film_advance) and projector-gate hiss (film_texture).
     Replace with real recordings per series; the mix doesn't care."""
     audio_dir.mkdir(parents=True, exist_ok=True)
     bed = audio_dir / "bed_standin.wav"
     room = audio_dir / "room_standin.wav"
     shutter = audio_dir / "shutter_standin.wav"
+    advance = audio_dir / "advance_standin.wav"
+    texture = audio_dir / "texture_standin.wav"
 
     if not bed.exists():
         left = ("0.17*sin(2*PI*55*t)*(0.75+0.25*sin(2*PI*0.09*t))"
@@ -323,18 +326,56 @@ def standin_audio(audio_dir: Path, log: Path) -> dict:
              "-map", "[a]", "-c:a", "pcm_s16le", room], log)
 
     if not shutter.exists():
-        # NB: the expression is quoted — it contains commas (gte(t,0.10))
-        # that the filtergraph parser would otherwise treat as separators.
-        click = ("(2*random(0)-1)*0.8*exp(-55*t)"
-                 "+0.35*sin(2*PI*1850*t)*exp(-90*t)"
-                 "+0.30*sin(2*PI*140*t)*exp(-35*t)"
-                 "+gte(t\\,0.10)*(2*random(1)-1)*0.55*exp(-80*(t-0.10))")
+        # SLR anatomy, four events in ~180ms: mirror slap (broadband thud),
+        # a metallic linkage tick right behind it, first curtain ping, then
+        # the second curtain landing ~80ms later, drier and duller. Escaped
+        # commas: the expression rides inside a filtergraph string.
+        click = (
+            "(2*random(0)-1)*0.95*exp(-130*t)"                       # mirror slap
+            "+0.30*sin(2*PI*128*t)*exp(-52*t)"                       # body thump
+            "+gte(t\\,0.012)*0.18*sin(2*PI*3400*(t-0.012))*exp(-300*(t-0.012))"  # linkage tick
+            "+gte(t\\,0.02)*0.22*sin(2*PI*2500*(t-0.02))*exp(-220*(t-0.02))"     # curtain ping
+            "+gte(t\\,0.082)*(2*random(1)-1)*0.75*exp(-170*(t-0.082))"           # 2nd curtain
+            "+gte(t\\,0.082)*0.16*sin(2*PI*1750*(t-0.082))*exp(-260*(t-0.082))"
+        )
         run(["ffmpeg", "-y", "-f", "lavfi", "-i",
-             f"aevalsrc={click}:s=48000:d=0.45",
-             "-af", "lowpass=f=9000,pan=stereo|c0=c0|c1=c0",
+             f"aevalsrc={click}:s=48000:d=0.30",
+             "-af", "highpass=f=140,lowpass=f=9500,pan=stereo|c0=c0|c1=c0",
              "-c:a", "pcm_s16le", shutter], log)
 
-    return {"music_bed": bed, "room_tone": room, "shutter": shutter}
+    if not advance.exists():
+        # Film wind-on: a thumb-lever ratchet — decaying burst every 42ms
+        # (mod(t,…) restarts the envelope, seven pawl clicks over ~0.3s)
+        # with a sprocket-spring zip under it and a final lever clunk.
+        ratchet = (
+            "lt(t\\,0.30)*(2*random(0)-1)*0.85*exp(-420*mod(t\\,0.042))"
+            "+lt(t\\,0.30)*0.10*sin(2*PI*4200*t)*exp(-260*mod(t\\,0.042))"
+            "+lt(t\\,0.30)*(2*random(1)-1)*0.06"                      # spring zip
+            "+gte(t\\,0.315)*(2*random(2)-1)*0.5*exp(-160*(t-0.315))"  # end clunk
+            "+gte(t\\,0.315)*0.14*sin(2*PI*900*(t-0.315))*exp(-120*(t-0.315))"
+        )
+        run(["ffmpeg", "-y", "-f", "lavfi", "-i",
+             f"aevalsrc={ratchet}:s=48000:d=0.45",
+             "-af", "highpass=f=900,lowpass=f=7500,volume=0.9,"
+                    "pan=stereo|c0=c0|c1=c0",
+             "-c:a", "pcm_s16le", advance], log)
+
+    if not texture.exists():
+        # Projector-gate texture: filtered hiss with a 24Hz gate flicker and
+        # a slow wow underneath. Mixed ~-28dB — felt, not heard.
+        run(["ffmpeg", "-y",
+             "-f", "lavfi", "-i", "anoisesrc=color=white:seed=5:amplitude=0.18:d=20",
+             "-f", "lavfi", "-i", "anoisesrc=color=pink:seed=9:amplitude=0.22:d=20",
+             "-filter_complex",
+             "[0:a][1:a]join=inputs=2:channel_layout=stereo,"
+             "highpass=f=300,lowpass=f=5500,"
+             "tremolo=f=24:d=0.30,"          # gate flicker at frame rate
+             "tremolo=f=0.4:d=0.15,"         # slow wow
+             "volume=0.55[a]",
+             "-map", "[a]", "-c:a", "pcm_s16le", texture], log)
+
+    return {"music_bed": bed, "room_tone": room, "shutter": shutter,
+            "film_advance": advance, "film_texture": texture}
 
 
 # ---------------------------------------------------------------------------
@@ -373,12 +414,22 @@ audio:
   music_bed: {bed}
   shutter: {shutter}
   room_tone: {room}
+  # Kodak-flavour layers (delete either line to drop the layer):
+  film_advance: {advance}     # wind-on ratchet, fires as the circle lands
+  film_texture: {texture}     # projector-gate hiss/flicker under C..F
   target_lufs: -14.0
   true_peak: -1.0
   bed_db: -7.0
   room_db: -16.0
   shutter_db: 0.0
   duck_db: -2.0
+  film_advance_db: -4.0
+  film_texture_db: -28.0
+
+movement:                     # end scale of an eased push per still segment
+  A: 1.05                     # opener push-in
+  B: 1.0                      # static: the cut into clip C keeps its framing
+  D: 1.025                    # slow creep on the lightbox
 
 selects_circle:               # centred on cell {final_cell} of the sheet grid
   x: {cx}
@@ -506,7 +557,8 @@ def main(argv=None):
         grades="".join(f"    - {rel(g)}\n" for g in grades).rstrip("\n"),
         push=rel(push), living=rel(living),
         bed=rel(audio["music_bed"]), room=rel(audio["room_tone"]),
-        shutter=rel(audio["shutter"]),
+        shutter=rel(audio["shutter"]), advance=rel(audio["film_advance"]),
+        texture=rel(audio["film_texture"]),
         cx=circ["x"], cy=circ["y"], cw_=circ["w"], ch_=circ["h"],
         cells6=cells6, final_cell=final_cell, **grid,
     )

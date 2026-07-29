@@ -79,7 +79,18 @@ See the scaffold for the annotated version. Key blocks:
 - `selects_circle` — normalised centre/size of the chinagraph ellipse on
   the sheet.
 - `audio` — file paths, `target_lufs`/`true_peak`, and balance trims
-  (`bed_db`, `room_db`, `shutter_db`, `duck_db`).
+  (`bed_db`, `room_db`, `shutter_db`, `duck_db`, `film_advance_db`,
+  `film_texture_db`).
+- `audio.film_advance` / `audio.film_texture` (optional) — the Kodak-flavour
+  layers: a wind-on ratchet fired the moment the chinagraph circle settles
+  (select made → lever advances the film), and a low projector-gate
+  hiss/flicker running under C..F with the room tone. Delete either line to
+  drop the layer.
+- `movement` — end scale of an eased (cosine smoothstep) push across each
+  still segment: `A` (opener, default 1.05), `B` (default 1.0 — static so
+  the cut into the pre-rendered contact push starts from matching framing),
+  `D` (lightbox creep, default 1.025; masks and circle ride the same push).
+  C/F come pre-rendered and E has its own spec'd 1.00→1.03 ramp.
 - `circle` (optional) — `{delay, draw}` to retime the stroke reveal.
 - `grade` (optional) — `{crossfade, scale_to}` for segment E.
 
@@ -130,6 +141,20 @@ See the scaffold for the annotated version. Key blocks:
     out and overshoots ~35° so the ends cross, and a faint blurred copy sits
     under the line like wax smear. Drawn as an alpha PNG sequence at 2×
     supersample, overlaid at 30fps.
+15. **Wind-on placement.** The film-advance ratchet fires once, 50ms after
+    the circle finishes drawing (~9.60 with default beats) — the story beat
+    is "frame marked, advance to the next". It is deliberately absent from
+    the B/D shutter hits; those stay clean clicks. No bed duck under it
+    (it sits 4dB down already).
+16. **Movement defaults.** A pushes 5%, D creeps 2.5%, B stays static —
+    a moving B would jump-cut against the first frame of the pre-rendered
+    contact-push clip, which starts from the same wide framing. If your
+    Higgsfield push starts already moving, a little `B: 1.015` works.
+17. **Stand-in click synthesis.** The generated shutter is a four-event SLR
+    model (mirror slap, linkage tick, first-curtain ping, second curtain
+    ~80ms later); the wind-on is a 7-pawl ratchet (42ms period) with a
+    spring zip and end clunk. They're placeholders with the right *shape* —
+    a real recorded Nikon/Canon click will still read better.
 
 ## This example series (and its provenance)
 
